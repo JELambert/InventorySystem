@@ -229,6 +229,192 @@ class APIClient:
         """Get category statistics and analytics."""
         return self._make_request("GET", "categories/stats")
     
+    # Item CRUD Methods
+    
+    def get_items(
+        self, 
+        skip: int = 0, 
+        limit: int = 100,
+        item_type: Optional[str] = None,
+        category_id: Optional[int] = None,
+        search: Optional[str] = None,
+        condition: Optional[str] = None,
+        status: Optional[str] = None
+    ) -> List[dict]:
+        """Get a list of items with optional filtering."""
+        params = {"skip": skip, "limit": limit}
+        
+        if item_type:
+            params["item_type"] = item_type
+        if category_id is not None:
+            params["category_id"] = category_id
+        if search:
+            params["search"] = search
+        if condition:
+            params["condition"] = condition
+        if status:
+            params["status"] = status
+        
+        return self._make_request("GET", "items/", params=params)
+    
+    def get_item(self, item_id: int) -> dict:
+        """Get a specific item by ID."""
+        return self._make_request("GET", f"items/{item_id}")
+    
+    def create_item(self, item_data: dict) -> dict:
+        """Create a new item."""
+        return self._make_request("POST", "items/", data=item_data)
+    
+    def update_item(self, item_id: int, item_data: dict) -> dict:
+        """Update an existing item."""
+        return self._make_request("PUT", f"items/{item_id}", data=item_data)
+    
+    def delete_item(self, item_id: int) -> bool:
+        """Delete an item."""
+        try:
+            self._make_request("DELETE", f"items/{item_id}")
+            return True
+        except APIError:
+            return False
+    
+    def search_items(self, search_data: dict) -> List[dict]:
+        """Search items with advanced filtering."""
+        return self._make_request("POST", "items/search", data=search_data)
+    
+    def get_item_statistics(self) -> dict:
+        """Get item statistics and analytics."""
+        return self._make_request("GET", "items/statistics/overview")
+    
+    def update_item_status(self, item_id: int, new_status: str, notes: Optional[str] = None) -> dict:
+        """Update item status."""
+        data = {"new_status": new_status}
+        if notes:
+            data["notes"] = notes
+        return self._make_request("PUT", f"items/{item_id}/status", data=data)
+    
+    def update_item_condition(self, item_id: int, new_condition: str, notes: Optional[str] = None) -> dict:
+        """Update item condition."""
+        data = {"new_condition": new_condition}
+        if notes:
+            data["notes"] = notes
+        return self._make_request("PUT", f"items/{item_id}/condition", data=data)
+    
+    def update_item_value(self, item_id: int, new_value: float, notes: Optional[str] = None) -> dict:
+        """Update item value."""
+        data = {"new_value": new_value}
+        if notes:
+            data["notes"] = notes
+        return self._make_request("PUT", f"items/{item_id}/value", data=data)
+    
+    def add_item_tag(self, item_id: int, tag: str) -> dict:
+        """Add a tag to an item."""
+        data = {"tag": tag}
+        return self._make_request("POST", f"items/{item_id}/tags", data=data)
+    
+    def remove_item_tag(self, item_id: int, tag: str) -> dict:
+        """Remove a tag from an item."""
+        data = {"tag": tag}
+        return self._make_request("DELETE", f"items/{item_id}/tags", data=data)
+    
+    def get_item_tags(self, item_id: int) -> List[str]:
+        """Get all tags for an item."""
+        return self._make_request("GET", f"items/{item_id}/tags")
+    
+    def bulk_update_items(self, updates: List[dict]) -> dict:
+        """Bulk update multiple items."""
+        data = {"updates": updates}
+        return self._make_request("PUT", "items/bulk", data=data)
+    
+    def export_items(self, export_format: str = "csv", filters: Optional[dict] = None) -> dict:
+        """Export items to specified format."""
+        data = {"format": export_format}
+        if filters:
+            data["filters"] = filters
+        return self._make_request("POST", "items/export", data=data)
+    
+    # Inventory Management Methods
+    
+    def get_inventory(
+        self,
+        item_id: Optional[int] = None,
+        location_id: Optional[int] = None,
+        min_quantity: Optional[int] = None,
+        max_quantity: Optional[int] = None,
+        min_value: Optional[float] = None,
+        max_value: Optional[float] = None
+    ) -> List[dict]:
+        """Get inventory entries with optional filtering."""
+        params = {}
+        if item_id is not None:
+            params["item_id"] = item_id
+        if location_id is not None:
+            params["location_id"] = location_id
+        if min_quantity is not None:
+            params["min_quantity"] = min_quantity
+        if max_quantity is not None:
+            params["max_quantity"] = max_quantity
+        if min_value is not None:
+            params["min_value"] = min_value
+        if max_value is not None:
+            params["max_value"] = max_value
+        
+        return self._make_request("GET", "inventory/", params=params)
+    
+    def get_inventory_entry(self, inventory_id: int) -> dict:
+        """Get a specific inventory entry by ID."""
+        return self._make_request("GET", f"inventory/{inventory_id}")
+    
+    def create_inventory_entry(self, item_id: int, location_id: int, quantity: int = 1) -> dict:
+        """Create a new inventory entry."""
+        data = {
+            "item_id": item_id,
+            "location_id": location_id,
+            "quantity": quantity
+        }
+        return self._make_request("POST", "inventory/", data=data)
+    
+    def update_inventory_entry(self, inventory_id: int, update_data: dict) -> dict:
+        """Update an inventory entry."""
+        return self._make_request("PUT", f"inventory/{inventory_id}", data=update_data)
+    
+    def delete_inventory_entry(self, inventory_id: int) -> bool:
+        """Delete an inventory entry."""
+        try:
+            self._make_request("DELETE", f"inventory/{inventory_id}")
+            return True
+        except APIError:
+            return False
+    
+    def move_item(self, item_id: int, from_location_id: int, to_location_id: int, quantity: int) -> dict:
+        """Move items between locations."""
+        data = {
+            "from_location_id": from_location_id,
+            "to_location_id": to_location_id,
+            "quantity": quantity
+        }
+        return self._make_request("POST", f"inventory/move/{item_id}", data=data)
+    
+    def get_item_locations(self, item_id: int) -> List[dict]:
+        """Get all locations where an item is stored."""
+        return self._make_request("GET", f"inventory/items/{item_id}/locations")
+    
+    def get_location_items(self, location_id: int) -> List[dict]:
+        """Get all items stored in a location."""
+        return self._make_request("GET", f"inventory/locations/{location_id}/items")
+    
+    def get_inventory_summary(self) -> dict:
+        """Get overall inventory summary statistics."""
+        return self._make_request("GET", "inventory/summary")
+    
+    def get_location_inventory_report(self, location_id: int) -> dict:
+        """Generate comprehensive inventory report for a location."""
+        return self._make_request("GET", f"inventory/locations/{location_id}/report")
+    
+    def bulk_create_inventory(self, operations: List[dict]) -> List[dict]:
+        """Create multiple inventory entries in a single transaction."""
+        data = {"operations": operations}
+        return self._make_request("POST", "inventory/bulk", data=data)
+    
     # Utility Methods
     
     def get_connection_info(self) -> dict:

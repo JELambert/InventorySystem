@@ -61,6 +61,84 @@ def safe_api_call(func: Callable, error_message: str = "API call failed") -> Any
         return None
 
 
+def safe_float_format(value: Any, default: float = 0.0, format_str: str = ".2f") -> str:
+    """Safely convert and format numeric values from API responses.
+    
+    Args:
+        value: Value to convert (could be string, int, float, None, etc.)
+        default: Default value if conversion fails
+        format_str: Format string for the float (e.g., ".2f", ",.2f")
+    
+    Returns:
+        Formatted string representation of the numeric value
+    """
+    try:
+        if value is None:
+            numeric_value = default
+        elif isinstance(value, str):
+            # Handle empty strings
+            if not value.strip():
+                numeric_value = default
+            else:
+                numeric_value = float(value)
+        elif isinstance(value, (int, float)):
+            numeric_value = float(value)
+        else:
+            # For any other type, try to convert
+            numeric_value = float(value)
+    except (ValueError, TypeError):
+        logger.warning(f"Could not convert value '{value}' to float, using default {default}")
+        numeric_value = default
+    
+    try:
+        return f"{numeric_value:{format_str}}"
+    except ValueError:
+        # If format string is invalid, use basic float formatting
+        return f"{numeric_value:.2f}"
+
+
+def safe_currency_format(value: Any, currency: str = "$", default: float = 0.0) -> str:
+    """Safely format monetary values with currency symbol.
+    
+    Args:
+        value: Monetary value to format
+        currency: Currency symbol (default: $)
+        default: Default value if conversion fails
+        
+    Returns:
+        Formatted currency string (e.g., "$1,234.56")
+    """
+    formatted_value = safe_float_format(value, default, ",.2f")
+    return f"{currency}{formatted_value}"
+
+
+def safe_int_convert(value: Any, default: int = 0) -> int:
+    """Safely convert values to integers.
+    
+    Args:
+        value: Value to convert
+        default: Default value if conversion fails
+        
+    Returns:
+        Integer value
+    """
+    try:
+        if value is None:
+            return default
+        elif isinstance(value, str):
+            if not value.strip():
+                return default
+            # Handle string numbers that might be floats
+            return int(float(value))
+        elif isinstance(value, (int, float)):
+            return int(value)
+        else:
+            return int(value)
+    except (ValueError, TypeError):
+        logger.warning(f"Could not convert value '{value}' to int, using default {default}")
+        return default
+
+
 def create_category_display(category_id: Optional[int], categories: List[Dict[str, Any]]) -> str:
     """Create a category display string with visual indicators."""
     if not category_id or not categories:

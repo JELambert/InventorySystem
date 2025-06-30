@@ -4,7 +4,10 @@ Location model for hierarchical inventory organization.
 Supports nested location structure: House → Room → Container → Shelf
 """
 
-from typing import List, Optional
+from typing import List, Optional, TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from .inventory import Inventory
 from datetime import datetime
 from sqlalchemy import Integer, String, Text, DateTime, ForeignKey, Enum
 from sqlalchemy.orm import relationship, Mapped, mapped_column
@@ -77,8 +80,8 @@ class Location(Base):
     category: Mapped[Optional["Category"]] = relationship(
         "Category", back_populates="locations"
     )
-    items: Mapped[List["Item"]] = relationship(
-        "Item", back_populates="location"
+    inventory_entries: Mapped[List["Inventory"]] = relationship(
+        "Inventory", back_populates="location", cascade="all, delete-orphan"
     )
 
     def __repr__(self) -> str:

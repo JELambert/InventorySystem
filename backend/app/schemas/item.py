@@ -43,7 +43,6 @@ class ItemBase(BaseModel):
     color: Optional[str] = Field(None, max_length=50, description="Primary color")
     
     # Relationships
-    location_id: int = Field(..., description="Location where item is stored")
     category_id: Optional[int] = Field(None, description="Optional category for organization")
     
     # Additional metadata
@@ -254,8 +253,8 @@ class ItemStatistics(BaseModel):
     
     total_items: int = Field(..., description="Total number of items")
     active_items: int = Field(..., description="Number of active items")
-    total_value: Optional[Decimal] = Field(None, description="Total estimated value of all items")
-    average_value: Optional[Decimal] = Field(None, description="Average value per item")
+    total_value: Optional[float] = Field(None, description="Total estimated value of all items")
+    average_value: Optional[float] = Field(None, description="Average value per item")
     
     # Counts by enumeration
     by_type: dict = Field(default_factory=dict, description="Count of items by type")

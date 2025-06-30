@@ -335,12 +335,25 @@ def show_quick_actions():
 
 def main():
     """Main manage page function."""
-    st.title("⚙️ Manage Locations")
-    st.markdown("Create new locations and manage your inventory hierarchy")
+    st.title("⚙️ Manage Inventory")
+    st.markdown("Create and manage your locations and items")
     
     # Enable keyboard shortcuts
     enable_keyboard_shortcuts()
     show_keyboard_shortcuts_help()
+    
+    # Main entity selection
+    entity_tabs = st.tabs(["📍 Locations", "📦 Items"])
+    
+    with entity_tabs[0]:
+        manage_locations()
+    
+    with entity_tabs[1]:
+        manage_items()
+
+def manage_locations():
+    """Location management section."""
+    st.subheader("📍 Location Management")
     
     # Management mode selection
     management_tabs = st.tabs(["➕ Individual", "🔄 Bulk Operations", "📂 Import/Export"])
@@ -420,6 +433,293 @@ def main():
         - Add descriptions for better organization
         - Follow the hierarchy rules for best results
         """)
+
+def manage_items():
+    """Item management section."""
+    st.subheader("📦 Item Management")
+    
+    # Management mode selection
+    item_tabs = st.tabs(["➕ Add Item", "📝 Edit Items"])
+    
+    with item_tabs[0]:
+        show_item_creation_form()
+    
+    with item_tabs[1]:
+        show_item_editing_interface()
+
+def show_item_creation_form():
+    """Display item creation form."""
+    st.markdown("### ➕ Create New Item")
+    
+    # Initialize API client
+    if 'api_client' not in st.session_state:
+        st.session_state.api_client = APIClient()
+    
+    api_client = st.session_state.api_client
+    
+    # Load available locations and categories
+    with st.spinner("Loading locations and categories..."):
+        locations = safe_api_call(
+            lambda: api_client.get_locations(skip=0, limit=1000),
+            "Failed to load locations"
+        )
+        categories = safe_api_call(
+            lambda: api_client.get_categories(page=1, per_page=100, include_inactive=False),
+            "Failed to load categories"
+        )
+    
+    if not locations:
+        st.warning("⚠️ No locations available. Please create locations first.")
+        if st.button("Go to Location Management"):
+            st.switch_page("pages/03_⚙️_Manage.py")
+        return
+    
+    # Item creation form
+    with st.form("create_item_form", clear_on_submit=True):
+        col1, col2 = st.columns(2)
+        
+        with col1:
+            # Basic information
+            st.markdown("**Basic Information**")
+            name = st.text_input("Item Name*", help="Enter the item name")
+            description = st.text_area("Description", help="Optional description of the item")
+            
+            # Item type selection
+            item_types = [
+                "electronics", "furniture", "clothing", "books", "documents",
+                "tools", "kitchen", "decor", "collectibles", "hobby",
+                "office", "personal", "seasonal", "storage", "other"
+            ]
+            item_type = st.selectbox("Item Type*", item_types, help="Select the primary type")
+            
+            # Condition and status
+            conditions = ["excellent", "very_good", "good", "fair", "poor", "for_repair", "not_working"]
+            condition = st.selectbox("Condition", conditions, index=2, help="Current condition")
+            
+            statuses = ["available", "in_use", "reserved", "maintenance", "lost", "disposed"]
+            status = st.selectbox("Status", statuses, help="Current availability status")
+        
+        with col2:
+            # Location and category
+            st.markdown("**Location & Organization**")
+            
+            # Location selection
+            location_options = {loc['id']: f"{loc['name']} ({loc['location_type']})" for loc in locations}
+            selected_location_id = st.selectbox(
+                "Location*",
+                options=list(location_options.keys()),
+                format_func=lambda x: location_options[x],
+                help="Where is this item stored?"
+            )
+            
+            # Category selection (optional)
+            if categories and categories.get('categories'):
+                cat_options = {0: "No Category"}
+                cat_options.update({
+                    cat['id']: cat['name'] 
+                    for cat in categories['categories'] 
+                    if cat.get('is_active', True)
+                })
+                selected_category_id = st.selectbox(
+                    "Category",
+                    options=list(cat_options.keys()),
+                    format_func=lambda x: cat_options[x],
+                    help="Optional category for organization"
+                )
+                if selected_category_id == 0:
+                    selected_category_id = None
+            else:
+                selected_category_id = None
+                st.info("No categories available")
+        
+        # Additional details in expander
+        with st.expander("📋 Additional Details"):
+            col3, col4 = st.columns(2)
+            
+            with col3:
+                st.markdown("**Product Information**")
+                brand = st.text_input("Brand", help="Manufacturer or brand name")
+                model = st.text_input("Model", help="Model number or name")
+                serial_number = st.text_input("Serial Number", help="Serial number if applicable")
+                barcode = st.text_input("Barcode/UPC", help="Barcode or UPC if applicable")
+            
+            with col4:
+                st.markdown("**Value & Dates**")
+                purchase_price = st.number_input("Purchase Price ($)", min_value=0.0, format="%.2f", help="Original purchase price")
+                current_value = st.number_input("Current Value ($)", min_value=0.0, format="%.2f", help="Current estimated value")
+                purchase_date = st.date_input("Purchase Date", value=None, help="Date of purchase")
+                warranty_expiry = st.date_input("Warranty Expiry", value=None, help="Warranty expiration date")
+            
+            # Physical properties
+            st.markdown("**Physical Properties**")
+            col5, col6 = st.columns(2)
+            with col5:
+                weight = st.number_input("Weight (kg)", min_value=0.0, format="%.3f", help="Weight in kilograms")
+                color = st.text_input("Color", help="Primary color")
+            with col6:
+                dimensions = st.text_input("Dimensions", help="e.g., '10x20x5 cm'")
+                tags = st.text_input("Tags", help="Comma-separated tags for search")
+            
+            # Notes
+            notes = st.text_area("Notes", help="Additional notes or observations")
+        
+        # Form submission
+        submitted = st.form_submit_button("✅ Create Item", type="primary", use_container_width=True)
+        
+        if submitted:
+            if not name.strip():
+                st.error("Item name is required")
+                return
+            
+            # Prepare item data (location_id will be handled via inventory)
+            item_data = {
+                "name": name.strip(),
+                "item_type": item_type,
+                "condition": condition,
+                "status": status
+            }
+            
+            # Add optional fields if provided
+            if description.strip():
+                item_data["description"] = description.strip()
+            if selected_category_id:
+                item_data["category_id"] = selected_category_id
+            if brand.strip():
+                item_data["brand"] = brand.strip()
+            if model.strip():
+                item_data["model"] = model.strip()
+            if serial_number.strip():
+                item_data["serial_number"] = serial_number.strip()
+            if barcode.strip():
+                item_data["barcode"] = barcode.strip()
+            if purchase_price > 0:
+                item_data["purchase_price"] = purchase_price
+            if current_value > 0:
+                item_data["current_value"] = current_value
+            if purchase_date:
+                item_data["purchase_date"] = purchase_date.isoformat()
+            if warranty_expiry:
+                item_data["warranty_expiry"] = warranty_expiry.isoformat()
+            if weight > 0:
+                item_data["weight"] = weight
+            if color.strip():
+                item_data["color"] = color.strip()
+            if dimensions.strip():
+                item_data["dimensions"] = dimensions.strip()
+            if tags.strip():
+                item_data["tags"] = tags.strip()
+            if notes.strip():
+                item_data["notes"] = notes.strip()
+            
+            # Create the item
+            with st.spinner("Creating item..."):
+                result = safe_api_call(
+                    lambda: api_client.create_item(item_data),
+                    "Failed to create item"
+                )
+            
+            if result:
+                show_success(f"Item '{name}' created successfully!")
+                st.balloons()
+                # Clear form by rerunning
+                st.rerun()
+
+def show_item_editing_interface():
+    """Display interface for editing existing items."""
+    st.markdown("### 📝 Edit Existing Items")
+    
+    # Initialize API client
+    if 'api_client' not in st.session_state:
+        st.session_state.api_client = APIClient()
+    
+    api_client = st.session_state.api_client
+    
+    # Load existing items
+    with st.spinner("Loading items..."):
+        items = safe_api_call(
+            lambda: api_client.get_items(skip=0, limit=100),
+            "Failed to load items"
+        )
+    
+    if not items:
+        st.info("📦 No items found. Create some items first!")
+        return
+    
+    # Item selection
+    item_options = {item['id']: f"{item['name']} ({item.get('item_type', '').replace('_', ' ').title()})" for item in items}
+    selected_item_id = st.selectbox(
+        "Select Item to Edit",
+        options=list(item_options.keys()),
+        format_func=lambda x: item_options[x]
+    )
+    
+    if selected_item_id:
+        selected_item = next(item for item in items if item['id'] == selected_item_id)
+        
+        # Display item details
+        st.markdown(f"**Editing: {selected_item['name']}**")
+        
+        # Quick action buttons
+        col1, col2, col3, col4 = st.columns(4)
+        
+        with col1:
+            if st.button("📝 Full Edit"):
+                st.session_state.edit_item_id = selected_item_id
+                st.switch_page("pages/05_📦_Items.py")
+        
+        with col2:
+            if st.button("📍 Change Location"):
+                st.session_state.show_move_item = True
+        
+        with col3:
+            if st.button("🔄 Update Status"):
+                st.session_state.show_status_update = True
+        
+        with col4:
+            if st.button("🗑️ Delete Item"):
+                st.session_state.show_delete_confirm = True
+        
+        # Show current item details
+        with st.expander("📋 Current Item Details", expanded=True):
+            col1, col2 = st.columns(2)
+            
+            with col1:
+                st.write(f"**Type:** {selected_item.get('item_type', '').replace('_', ' ').title()}")
+                st.write(f"**Condition:** {selected_item.get('condition', '').replace('_', ' ').title()}")
+                st.write(f"**Status:** {selected_item.get('status', '').replace('_', ' ').title()}")
+                if selected_item.get('brand'):
+                    st.write(f"**Brand:** {selected_item['brand']}")
+                if selected_item.get('model'):
+                    st.write(f"**Model:** {selected_item['model']}")
+            
+            with col2:
+                if selected_item.get('current_value'):
+                    st.write(f"**Current Value:** ${selected_item['current_value']:.2f}")
+                if selected_item.get('purchase_price'):
+                    st.write(f"**Purchase Price:** ${selected_item['purchase_price']:.2f}")
+                st.write(f"**Created:** {selected_item.get('created_at', '').split('T')[0]}")
+                if selected_item.get('updated_at'):
+                    st.write(f"**Updated:** {selected_item['updated_at'].split('T')[0]}")
+        
+        # Handle modal actions
+        if st.session_state.get('show_delete_confirm'):
+            st.error("⚠️ Are you sure you want to delete this item? This action cannot be undone.")
+            col1, col2 = st.columns(2)
+            with col1:
+                if st.button("✅ Yes, Delete", type="primary"):
+                    with st.spinner("Deleting item..."):
+                        success = safe_api_call(
+                            lambda: api_client.delete_item(selected_item_id),
+                            "Failed to delete item"
+                        )
+                    if success:
+                        show_success("Item deleted successfully!")
+                        st.session_state.show_delete_confirm = False
+                        st.rerun()
+            with col2:
+                if st.button("❌ Cancel"):
+                    st.session_state.show_delete_confirm = False
+                    st.rerun()
 
 if __name__ == "__main__":
     main()

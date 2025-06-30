@@ -12,7 +12,10 @@ import logging
 from typing import Dict, Any
 
 from utils.api_client import APIClient, APIError
-from utils.helpers import safe_api_call, show_error, show_warning, format_datetime
+from utils.helpers import (
+    safe_api_call, show_error, show_warning, format_datetime,
+    safe_currency_format, safe_float_format, safe_int_convert
+)
 from utils.config import AppConfig
 from components.keyboard_shortcuts import (
     enable_keyboard_shortcuts, show_keyboard_shortcuts_help,
@@ -64,11 +67,32 @@ def load_dashboard_data() -> Dict[str, Any]:
         "Failed to load categories"
     )
     
+    # Load item statistics
+    item_stats = safe_api_call(
+        lambda: api_client.get_item_statistics(),
+        "Failed to load item statistics"
+    )
+    
+    # Load inventory summary
+    inventory_summary = safe_api_call(
+        lambda: api_client.get_inventory_summary(),
+        "Failed to load inventory summary"
+    )
+    
+    # Load recent items (first 10)
+    recent_items = safe_api_call(
+        lambda: api_client.get_items(skip=0, limit=10),
+        "Failed to load recent items"
+    )
+    
     return {
         'stats': stats or {},
         'locations': locations or [],
         'category_stats': category_stats or {},
-        'categories': categories_data.get('categories', []) if categories_data else []
+        'categories': categories_data.get('categories', []) if categories_data else [],
+        'item_stats': item_stats or {},
+        'inventory_summary': inventory_summary or {},
+        'recent_items': recent_items or []
     }
 
 def create_stats_metrics(stats: Dict[str, Any]):
@@ -105,6 +129,43 @@ def create_stats_metrics(stats: Dict[str, Any]):
             label="📦 Storage Units",
             value=f"{containers}/{shelves}",
             help="Containers and shelves for storage"
+        )
+
+def create_item_metrics(item_stats: Dict[str, Any]):
+    """Create metrics display for item statistics."""
+    col1, col2, col3, col4 = st.columns(4)
+    
+    with col1:
+        st.metric(
+            label="📦 Total Items",
+            value=safe_int_convert(item_stats.get('total_items'), 0),
+            help="Total number of items in your inventory"
+        )
+    
+    with col2:
+        st.metric(
+            label="💰 Total Value",
+            value=safe_currency_format(item_stats.get('total_value')),
+            help="Total value of all items"
+        )
+    
+    with col3:
+        # Calculate available items from status distribution
+        by_status = item_stats.get('by_status', {})
+        available_count = safe_int_convert(by_status.get('available'), 0)
+        st.metric(
+            label="✅ Available Items",
+            value=available_count,
+            help="Items currently available for use"
+        )
+    
+    with col4:
+        # Calculate in-use items from status distribution
+        in_use_count = safe_int_convert(by_status.get('in_use'), 0)
+        st.metric(
+            label="🔄 In Use Items",
+            value=in_use_count,
+            help="Items currently being used"
         )
 
 def create_category_metrics(category_stats: Dict[str, Any], categories: list):
@@ -269,77 +330,219 @@ def create_category_visualizations(categories: list):
             
             st.plotly_chart(timeline_fig, use_container_width=True)
 
+def create_item_visualizations(item_stats: Dict[str, Any], inventory_summary: Dict[str, Any], recent_items: list):
+    """Create visualizations for item statistics."""
+    # Item status distribution
+    if 'status_distribution' in item_stats:
+        status_data = item_stats['status_distribution']
+        status_fig = px.pie(
+            values=list(status_data.values()),
+            names=list(status_data.keys()),
+            title="Item Status Distribution",
+            color_discrete_sequence=px.colors.qualitative.Set3
+        )
+        status_fig.update_traces(textposition='inside', textinfo='percent+label')
+        st.plotly_chart(status_fig, use_container_width=True)
+    
+    # Value distribution
+    if 'value_distribution' in item_stats:
+        value_data = item_stats['value_distribution']
+        value_fig = px.bar(
+            x=list(value_data.keys()),
+            y=list(value_data.values()),
+            title="Items by Value Range",
+            labels={'x': 'Value Range', 'y': 'Count'}
+        )
+        st.plotly_chart(value_fig, use_container_width=True)
+    
+    # Recent items timeline if available
+    if recent_items:
+        st.subheader("📅 Recent Items Added")
+        items_with_dates = [item for item in recent_items if item.get('created_at')]
+        if items_with_dates:
+            timeline_data = []
+            for item in items_with_dates:
+                try:
+                    created_at = pd.to_datetime(item['created_at'])
+                    if created_at.tz is not None:
+                        created_at = created_at.tz_convert('UTC').tz_localize(None)
+                    timeline_data.append({
+                        'Date': created_at,
+                        'Item': item.get('name', 'Unnamed'),
+                        'Value': item.get('purchase_price', 0)
+                    })
+                except:
+                    continue
+            
+            if timeline_data:
+                timeline_df = pd.DataFrame(timeline_data)
+                timeline_fig = px.scatter(
+                    timeline_df,
+                    x='Date',
+                    y='Value',
+                    hover_name='Item',
+                    title='Recent Items by Date and Value'
+                )
+                st.plotly_chart(timeline_fig, use_container_width=True)
+
+def show_recent_items(items: list):
+    """Display recent items in a table."""
+    if not items:
+        st.info("No recent items found")
+        return
+    
+    display_data = []
+    for item in items:
+        display_data.append({
+            'Name': item.get('name', ''),
+            'Type': item.get('item_type', '').title(),
+            'Status': item.get('status', '').title(),
+            'Value': safe_currency_format(item.get('purchase_price')) if item.get('purchase_price') else 'N/A',
+            'Location': item.get('location_name', 'Unassigned'),
+            'Created': format_datetime(item.get('created_at', '')),
+            'ID': item.get('id')
+        })
+    
+    df = pd.DataFrame(display_data)
+    
+    column_config = {
+        "Name": st.column_config.TextColumn("Item Name"),
+        "Type": st.column_config.TextColumn("Type"),
+        "Status": st.column_config.TextColumn("Status"),
+        "Value": st.column_config.TextColumn("Value"),
+        "Location": st.column_config.TextColumn("Location"),
+        "Created": st.column_config.TextColumn("Created"),
+        "ID": st.column_config.NumberColumn("ID", disabled=True)
+    }
+    
+    st.dataframe(
+        df,
+        column_config=column_config,
+        use_container_width=True,
+        hide_index=True
+    )
+
 def create_enhanced_visualizations(locations: list):
     """Create enhanced visualizations using the new visualization components."""
     if not locations:
         st.info("No location data available for visualizations")
         return
     
-    # Import visualization components
-    from components.visualizations import LocationVisualizationBuilder, create_location_statistics_cards
-    
-    # Create visualization builder
-    viz_builder = LocationVisualizationBuilder(locations)
-    
-    # Statistics cards
-    st.subheader("📈 Key Metrics")
-    create_location_statistics_cards(locations)
-    
-    st.markdown("---")
-    
-    # Visualization options
-    st.subheader("📊 Advanced Visualizations")
-    
-    viz_tabs = st.tabs([
-        "📈 Overview", 
-        "🌳 Hierarchy", 
-        "📅 Timeline", 
-        "📋 Analytics"
-    ])
-    
-    with viz_tabs[0]:
-        # Overview visualizations
-        col1, col2 = st.columns(2)
+    # Try to import visualization components, fallback to basic visualizations if not available
+    try:
+        from components.visualizations import LocationVisualizationBuilder, create_location_statistics_cards
         
-        with col1:
+        # Create visualization builder
+        viz_builder = LocationVisualizationBuilder(locations)
+        
+        # Statistics cards
+        st.subheader("📈 Key Metrics")
+        create_location_statistics_cards(locations)
+        
+        st.markdown("---")
+        
+        # Visualization options
+        st.subheader("📊 Advanced Visualizations")
+        
+        viz_tabs = st.tabs([
+            "📈 Overview", 
+            "🌳 Hierarchy", 
+            "📅 Timeline", 
+            "📋 Analytics"
+        ])
+        
+        with viz_tabs[0]:
+            # Overview visualizations
+            col1, col2 = st.columns(2)
+            
+            with col1:
+                st.plotly_chart(
+                    viz_builder.create_type_distribution_pie(),
+                    use_container_width=True
+                )
+            
+            with col2:
+                st.plotly_chart(
+                    viz_builder.create_hierarchy_depth_bar(),
+                    use_container_width=True
+                )
+        
+        with viz_tabs[1]:
+            # Hierarchy visualization
+            max_depth = st.selectbox(
+                "Select maximum depth to display",
+                options=[1, 2, 3, 4, 5],
+                index=2,  # Index 2 = value 3
+                help="Choose how many levels of the hierarchy to show"
+            )
+            
             st.plotly_chart(
-                viz_builder.create_type_distribution_pie(),
+                viz_builder.create_hierarchy_tree_chart(max_depth=max_depth),
                 use_container_width=True
             )
         
-        with col2:
+        with viz_tabs[2]:
+            # Timeline visualization
             st.plotly_chart(
-                viz_builder.create_hierarchy_depth_bar(),
+                viz_builder.create_creation_timeline(),
+                use_container_width=True
+            )
+        
+        with viz_tabs[3]:
+            # Analytics dashboard
+            st.plotly_chart(
+                viz_builder.create_location_metrics_dashboard(),
                 use_container_width=True
             )
     
-    with viz_tabs[1]:
-        # Hierarchy visualization
-        max_depth = st.selectbox(
-            "Select maximum depth to display",
-            options=[1, 2, 3, 4, 5],
-            index=2,  # Index 2 = value 3
-            help="Choose how many levels of the hierarchy to show"
+    except ImportError:
+        # Fallback to basic visualizations
+        st.warning("Advanced visualizations not available - using basic charts")
+        create_basic_location_visualizations(locations)
+
+def create_basic_location_visualizations(locations: list):
+    """Create basic location visualizations when advanced components are not available."""
+    # Location type distribution
+    type_counts = {}
+    for loc in locations:
+        loc_type = loc.get('location_type', 'unknown')
+        type_counts[loc_type] = type_counts.get(loc_type, 0) + 1
+    
+    if type_counts:
+        type_fig = px.pie(
+            values=list(type_counts.values()),
+            names=list(type_counts.keys()),
+            title="Location Types Distribution"
         )
+        st.plotly_chart(type_fig, use_container_width=True)
+    
+    # Creation timeline
+    locations_with_dates = [loc for loc in locations if loc.get('created_at')]
+    if locations_with_dates:
+        timeline_data = []
+        for loc in locations_with_dates:
+            try:
+                created_at = pd.to_datetime(loc['created_at'])
+                if created_at.tz is not None:
+                    created_at = created_at.tz_convert('UTC').tz_localize(None)
+                timeline_data.append({
+                    'Date': created_at,
+                    'Location': loc.get('name', 'Unnamed'),
+                    'Type': loc.get('location_type', 'unknown')
+                })
+            except:
+                continue
         
-        st.plotly_chart(
-            viz_builder.create_hierarchy_tree_chart(max_depth=max_depth),
-            use_container_width=True
-        )
-    
-    with viz_tabs[2]:
-        # Timeline visualization
-        st.plotly_chart(
-            viz_builder.create_creation_timeline(),
-            use_container_width=True
-        )
-    
-    with viz_tabs[3]:
-        # Analytics dashboard
-        st.plotly_chart(
-            viz_builder.create_location_metrics_dashboard(),
-            use_container_width=True
-        )
+        if timeline_data:
+            timeline_df = pd.DataFrame(timeline_data)
+            timeline_fig = px.scatter(
+                timeline_df,
+                x='Date',
+                y='Type',
+                hover_name='Location',
+                title='Location Creation Timeline'
+            )
+            st.plotly_chart(timeline_fig, use_container_width=True)
 
 def show_recent_locations(locations: list):
     """Display recent locations in a table."""
@@ -396,16 +599,24 @@ def main():
     locations = data.get('locations', [])
     category_stats = data.get('category_stats', {})
     categories = data.get('categories', [])
+    item_stats = data.get('item_stats', {})
+    inventory_summary = data.get('inventory_summary', {})
+    recent_items = data.get('recent_items', [])
     
     # Metrics section
     st.subheader("📈 System Overview")
-    create_stats_metrics(stats)
     
-    st.markdown("---")
+    # Create tabs for different metric types
+    metric_tabs = st.tabs(["📍 Locations", "📦 Items", "🏷️ Categories"])
     
-    # Category analytics section
-    st.subheader("🏷️ Category Analytics")
-    create_category_metrics(category_stats, categories)
+    with metric_tabs[0]:
+        create_stats_metrics(stats)
+    
+    with metric_tabs[1]:
+        create_item_metrics(item_stats)
+    
+    with metric_tabs[2]:
+        create_category_metrics(category_stats, categories)
     
     st.markdown("---")
     
@@ -413,6 +624,7 @@ def main():
     # Create main visualization tabs
     main_tabs = st.tabs([
         "📍 Locations", 
+        "📦 Items",
         "🏷️ Categories", 
         "📊 Combined Analytics"
     ])
@@ -422,10 +634,14 @@ def main():
         create_enhanced_visualizations(locations)
     
     with main_tabs[1]:
+        st.subheader("📦 Item Analytics")
+        create_item_visualizations(item_stats, inventory_summary, recent_items)
+    
+    with main_tabs[2]:
         st.subheader("🏷️ Category Analytics") 
         create_category_visualizations(categories)
     
-    with main_tabs[2]:
+    with main_tabs[3]:
         st.subheader("📊 Combined System Analytics")
         
         # Combined metrics in columns
@@ -436,6 +652,11 @@ def main():
                 "📍 Total Locations",
                 stats.get('total_locations', 0),
                 help="All locations in the system"
+            )
+            st.metric(
+                "📦 Total Items",
+                item_stats.get('total_items', 0),
+                help="All items in the system"
             )
             st.metric(
                 "🏷️ Total Categories", 
@@ -452,6 +673,14 @@ def main():
                 help="Locations assigned to categories"
             )
             
+            # Calculate inventory distribution
+            total_inventory_entries = inventory_summary.get('total_entries', 0)
+            st.metric(
+                "📋 Inventory Entries",
+                total_inventory_entries,
+                help="Total item-location relationships"
+            )
+            
             # Calculate utilization rate
             if stats.get('total_locations', 0) > 0:
                 utilization_rate = round((locations_with_categories / stats.get('total_locations', 1)) * 100, 1)
@@ -463,9 +692,14 @@ def main():
     
     st.markdown("---")
     
-    # Recent locations section
-    st.subheader("🕒 Recent Locations")
-    show_recent_locations(locations[:10])  # Show top 10 recent
+    # Recent data section
+    recent_tabs = st.tabs(["📍 Recent Locations", "📦 Recent Items"])
+    
+    with recent_tabs[0]:
+        show_recent_locations(locations[:10])  # Show top 10 recent
+    
+    with recent_tabs[1]:
+        show_recent_items(recent_items[:10])  # Show top 10 recent
     
     # Enhanced quick actions
     st.markdown("---")
@@ -481,6 +715,16 @@ def main():
             'label': '➕ Add New Location',
             'callback': lambda: st.switch_page("pages/03_⚙️_Manage.py"),
             'help': 'Create a new location (Alt+N)'
+        },
+        'view_items': {
+            'label': '📦 View All Items',
+            'callback': lambda: st.switch_page("pages/05_📦_Items.py"),
+            'help': 'Browse and search all items (Alt+I)'
+        },
+        'add_item': {
+            'label': '📦➕ Add New Item',
+            'callback': lambda: (setattr(st.session_state, 'manage_tab', 'Items'), st.switch_page("pages/03_⚙️_Manage.py")),
+            'help': 'Create a new inventory item'
         },
         'view_categories': {
             'label': '🏷️ Manage Categories',

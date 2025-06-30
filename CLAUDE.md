@@ -4,9 +4,9 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-This is a **Home Inventory Management System** currently in the planning/architecture phase. The project is designed as a simple, reliable solution for tracking personal belongings in a homelab environment.
+This is a **Home Inventory Management System** in active development. The project is designed as a simple, reliable solution for tracking personal belongings in a homelab environment.
 
-**Current Status**: Architecture documentation complete, implementation not yet started.
+**Current Status**: ✅ Phase 1 Complete - Core CRUD functionality with PostgreSQL and full API implementation
 
 ## Technology Stack
 
@@ -59,26 +59,41 @@ This is a **Home Inventory Management System** currently in the planning/archite
 
 ## Development Commands
 
-Since implementation hasn't started, these are the expected commands based on the planned stack:
+**Prerequisites**: Python 3.12+, Poetry installed
 
 ```bash
 # Backend development
 cd backend
-pip install -r requirements.txt
-uvicorn app.main:app --reload --port 8000
+poetry install                           # Install dependencies
+poetry run alembic upgrade head         # Apply database migrations
+poetry run uvicorn app.main:app --reload --port 8000
 
 # Frontend development  
 cd frontend
-pip install -r requirements.txt
-streamlit run app.py --server.port 8501
+poetry install                          # Install dependencies
+poetry run streamlit run app.py --server.port 8501
 
 # Testing
-pytest backend/tests/
-pytest frontend/tests/
+cd backend
+poetry run pytest tests/               # Run backend tests
+cd frontend  
+poetry run pytest tests/               # Run frontend tests
+
+# Database operations
+cd backend
+poetry run alembic current             # Check migration status
+poetry run alembic upgrade head        # Apply migrations
+poetry run alembic revision --autogenerate -m "description"  # Create migration
 
 # Docker deployment
 docker-compose up -d
 ```
+
+**Development URLs**:
+- Backend API: http://localhost:8000
+- API Documentation: http://localhost:8000/docs  
+- Frontend: http://localhost:8501
+- Health Check: http://localhost:8000/health
 
 ## Core Data Models
 
@@ -149,25 +164,86 @@ docker-compose up -d
 - Secure session management
 - Environment-based configuration for secrets
 
-### Development Process Requirements
+### 🚨 MANDATORY Development Process Requirements
 
-**After Each Step Completion:**
-1. **Update DEVELOPMENT_LOG.md** with step completion details including:
-   - What was built and implemented
-   - Challenges faced and solutions applied
-   - Architecture decisions made
-   - Current state and verification results
-   - Technical debt and next steps
-2. Run all relevant tests and document results
-3. Create/update manual verification scripts if needed
-4. Update current status and next steps in the log
-5. Document any deviations from the original plan
+> **CRITICAL**: Documentation is NOT optional. Failure to follow these requirements will result in incomplete work that cannot be considered "done".
 
-**Testing Requirements:**
-- All tests must pass before marking a step complete
-- Use `python run_tests.py` for reliable test execution
-- Include both automated tests (pytest) and manual verification scripts
-- Document test results in DEVELOPMENT_LOG.md
+#### **📝 IMMEDIATE Documentation Requirements**
+
+**BEFORE marking any task as complete, you MUST:**
+
+1. **📊 Update DEVELOPMENT_LOG.md** - This is MANDATORY, not optional
+   - **What was built**: Detailed description of all functionality implemented
+   - **Challenges faced**: Problems encountered and specific solutions applied
+   - **Architecture decisions**: Technical choices made and reasoning
+   - **Current state**: What's working, what's not, verification results
+   - **Technical debt**: Issues created or resolved
+   - **Duration & complexity**: Time spent and difficulty level
+   - **Next steps**: Clear pipeline for future work
+
+2. **🧪 Document Testing Results**
+   - Run ALL relevant tests before claiming completion
+   - Document test results, pass/fail counts, and any issues
+   - Include both automated (pytest) and manual verification
+   - If tests fail, task is NOT complete
+
+3. **📋 Update TODO Tracking**
+   - Use TodoWrite tool to track ALL significant work
+   - Mark tasks in_progress when starting, completed when done
+   - Break complex work into trackable subtasks
+   - Never batch multiple completions
+
+#### **⚠️ Process Enforcement Rules**
+
+**UNACCEPTABLE**: Completing significant work without documentation
+- ❌ Making multiple fixes without logging each one
+- ❌ "Batching" documentation at the end of a session
+- ❌ Skipping DEVELOPMENT_LOG.md updates
+- ❌ Claiming work is "complete" without proper verification
+
+**REQUIRED**: Real-time documentation discipline
+- ✅ Document each significant change as it's made
+- ✅ Update DEVELOPMENT_LOG.md after every major task
+- ✅ Use TodoWrite tool to track ALL work in progress
+- ✅ Include timestamp, duration, and complexity assessment
+
+#### **📚 Documentation Quality Standards**
+
+Each DEVELOPMENT_LOG.md entry MUST include:
+- **Clear section header** with completion date and status
+- **Comprehensive "What Was Built" section** (not just bullet points)
+- **Detailed challenges and solutions** (for future reference)
+- **Technical implementation details** (versions, commands, configurations)
+- **Architecture decisions with reasoning** (why, not just what)
+- **Current state verification** (how you know it works)
+- **Technical debt assessment** (what issues remain)
+
+#### **🔄 Real-Time Process Flow**
+
+1. **Start Task**: Use TodoWrite to mark task as in_progress
+2. **Work in Small Chunks**: Max 30-60 minutes before documentation
+3. **Document Progress**: Update DEVELOPMENT_LOG.md after each chunk
+4. **Test & Verify**: Run tests and document results
+5. **Mark Complete**: Only after full documentation and verification
+6. **Update Status**: Reflect current state accurately in all files
+
+#### **📖 Additional Documentation Requirements**
+
+- **README.md**: Keep current with any new setup requirements
+- **Architecture.md**: Update for any architectural changes
+- **CLAUDE.md**: Update development status and priorities
+- **Code Comments**: Document complex logic inline
+- **Git Commits**: Meaningful commit messages with context
+
+#### **🚫 Consequences of Poor Documentation**
+
+Work that lacks proper documentation will be considered:
+- **Incomplete**: Not ready for production or handoff
+- **Technical Debt**: Creating maintenance burden
+- **Process Failure**: Violating development standards
+- **Non-Professional**: Below acceptable quality standards
+
+**Remember**: Good documentation is not overhead - it's an essential part of professional software development.
 
 ## Architecture Reference
 
@@ -180,9 +256,28 @@ Refer to `Architecture.md` for comprehensive technical details including:
 
 ## Current Development Priority
 
-The project is ready to begin Phase 1 implementation:
-1. Set up FastAPI backend with PostgreSQL integration
-2. Implement core Item and Location models
-3. Create basic CRUD operations
-4. Add Streamlit frontend with authentication
-5. Establish testing framework and CI/CD pipeline
+**✅ Phase 1 COMPLETE** - Core CRUD functionality implemented:
+1. ✅ FastAPI backend with PostgreSQL integration (Proxmox LXC)
+2. ✅ Core Location, Category, and Item models with relationships
+3. ✅ Complete REST API with 25+ endpoints 
+4. ✅ Streamlit frontend with multi-page navigation
+5. ✅ Comprehensive testing framework (65+ tests)
+6. ✅ Poetry package management and Docker configuration
+7. ✅ Database migrations with Alembic
+
+**🎯 Phase 2 READY** - Semantic Search Integration:
+1. Set up Weaviate vector database integration
+2. Implement item embedding generation and storage
+3. Add semantic search endpoints to API
+4. Create advanced search UI in frontend
+5. Implement dual-write pattern (PostgreSQL + Weaviate)
+
+**🔥 Phase 1.5 COMPLETE** - Frontend Issue Resolution & Enhancement:
+1. ✅ Dashboard ValueError fixes with safe numeric conversion helpers
+2. ✅ Backend API numeric type corrections (Decimal to float serialization) 
+3. ✅ Items page critical bug fixes (undefined variables, incorrect API calls)
+4. ✅ Complete item creation functionality directly in items page
+5. ✅ Comprehensive error handling and user feedback improvements
+6. ✅ Frontend robustness enhancements with fallback strategies
+
+**Current System Status**: Fully functional inventory management system with robust PostgreSQL backend, comprehensive Streamlit frontend, and complete CRUD operations for all entities (locations, categories, items). All major frontend issues resolved - ready for production use or Phase 2 enhancement.

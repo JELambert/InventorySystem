@@ -4,7 +4,10 @@ Item model for the Home Inventory System.
 Represents physical items stored in locations, with categorization support.
 """
 
-from typing import Optional, List
+from typing import Optional, List, TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from .inventory import Inventory
 from datetime import datetime
 from decimal import Decimal
 from sqlalchemy import String, Text, Boolean, DateTime, Integer, Numeric, ForeignKey, Enum
@@ -174,14 +177,7 @@ class Item(Base):
         comment="Primary color"
     )
     
-    # Relationships - Foreign Keys
-    location_id: Mapped[int] = mapped_column(
-        Integer, 
-        ForeignKey("locations.id"), 
-        nullable=False, 
-        index=True,
-        comment="Location where item is stored"
-    )
+    # Note: location relationship now handled through inventory table
     category_id: Mapped[Optional[int]] = mapped_column(
         Integer, 
         ForeignKey("categories.id"), 
@@ -234,11 +230,11 @@ class Item(Base):
     )
     
     # Relationships
-    location: Mapped["Location"] = relationship(
-        "Location", back_populates="items"
-    )
     category: Mapped[Optional["Category"]] = relationship(
         "Category", back_populates="items"
+    )
+    inventory_entries: Mapped[List["Inventory"]] = relationship(
+        "Inventory", back_populates="item", cascade="all, delete-orphan"
     )
     
     def __init__(self, **kwargs):
@@ -257,15 +253,24 @@ class Item(Base):
         return (
             f"Item(id={self.id}, name='{self.name}', "
             f"type={self.item_type.value}, condition={self.condition.value}, "
-            f"status={self.status.value}, location_id={self.location_id})"
+            f"status={self.status.value})"
         )
     
     # Property methods
     @property
+    def primary_location(self) -> Optional["Location"]:
+        """Get the primary location for this item (first inventory entry)."""
+        from .location import Location
+        if self.inventory_entries:
+            return self.inventory_entries[0].location
+        return None
+    
+    @property
     def full_location_path(self) -> str:
-        """Get the full path to this item's location."""
-        if self.location:
-            return f"{self.location.full_path}/{self.name}"
+        """Get the full path to this item's primary location."""
+        primary_loc = self.primary_location
+        if primary_loc:
+            return f"{primary_loc.full_path}/{self.name}"
         return self.name
     
     @property
@@ -346,11 +351,14 @@ class Item(Base):
         return True
     
     # Business logic methods
-    def move_to_location(self, new_location_id: int) -> None:
-        """Move item to a new location."""
-        self.location_id = new_location_id
-        self.updated_at = datetime.now().replace(tzinfo=None)
-        self.version = (self.version or 0) + 1
+    def move_to_location(self, new_location_id: int, quantity: int = 1) -> None:
+        """Move item to a new location by updating inventory."""
+        # This method now needs to be handled at the service layer
+        # since it involves inventory management
+        raise NotImplementedError(
+            "Item movement now requires inventory management. "
+            "Use InventoryService.move_item_to_location() instead."
+        )
     
     def update_condition(self, new_condition: ItemCondition, notes: Optional[str] = None) -> None:
         """Update the condition of the item."""
@@ -432,8 +440,7 @@ class Item(Base):
         if not item_data.get('name', '').strip():
             errors.append("Item name is required")
         
-        if not item_data.get('location_id'):
-            errors.append("Location is required")
+        # Note: location now handled through inventory table
         
         # Enum validations
         if 'item_type' in item_data:

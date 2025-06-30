@@ -49,6 +49,21 @@ from .item import (
     ItemExportRequest
 )
 
+# Inventory schemas
+from .inventory import (
+    InventoryBase,
+    InventoryCreate,
+    InventoryUpdate,
+    InventoryResponse,
+    InventoryWithDetails,
+    InventorySearch,
+    InventoryMove,
+    InventorySummary,
+    InventoryBulkOperation,
+    ItemLocationHistory,
+    LocationInventoryReport
+)
+
 __all__ = [
     # Location schemas
     "LocationBase",
@@ -87,5 +102,18 @@ __all__ = [
     "ItemHistoryEntry",
     "ItemImportRequest",
     "ItemImportResult",
-    "ItemExportRequest"
+    "ItemExportRequest",
+    
+    # Inventory schemas
+    "InventoryBase",
+    "InventoryCreate",
+    "InventoryUpdate", 
+    "InventoryResponse",
+    "InventoryWithDetails",
+    "InventorySearch",
+    "InventoryMove",
+    "InventorySummary",
+    "InventoryBulkOperation",
+    "ItemLocationHistory",
+    "LocationInventoryReport"
 ]

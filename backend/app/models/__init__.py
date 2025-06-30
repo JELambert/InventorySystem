@@ -7,6 +7,7 @@ Exports all SQLAlchemy models for easy importing.
 from .location import Location, LocationType
 from .category import Category
 from .item import Item, ItemType, ItemCondition, ItemStatus
+from .inventory import Inventory
 
 __all__ = [
     "Location",
@@ -15,5 +16,6 @@ __all__ = [
     "Item",
     "ItemType",
     "ItemCondition", 
-    "ItemStatus"
+    "ItemStatus",
+    "Inventory"
 ]
