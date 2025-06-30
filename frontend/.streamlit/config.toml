@@ -1,0 +1,24 @@
+[global]
+# Development mode settings
+developmentMode = false
+
+[server]
+# Server configuration
+address = "0.0.0.0"
+port = 8501
+maxUploadSize = 1028
+enableStaticServing = true
+
+[browser]
+# Browser settings
+gatherUsageStats = false
+
+[theme]
+# UI theme configuration
+primaryColor = "#1f77b4"
+backgroundColor = "#ffffff"
+secondaryBackgroundColor = "#f0f2f6"
+textColor = "#262730"
+font = "sans serif"
+
+# [client] section removed - showErrorDetails deprecated

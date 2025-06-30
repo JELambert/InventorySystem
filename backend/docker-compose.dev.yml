@@ -1,0 +1,17 @@
+version: '3.8'
+
+services:
+  backend-dev:
+    build: 
+      context: .
+      dockerfile: Dockerfile.dev
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./app:/app/app
+      - ./tests:/app/tests
+      - ./scripts:/app/scripts
+    environment:
+      - PYTHONPATH=/app
+      - DATABASE_URL=sqlite+aiosqlite:///./inventory.db
+    command: poetry run uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload

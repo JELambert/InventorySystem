@@ -1,0 +1,34 @@
+[tool.poetry]
+name = "home-inventory-frontend"
+version = "0.1.0"
+description = "Frontend Streamlit app for Home Inventory System"
+authors = ["Development Team <dev@inventory.local>"]
+package-mode = false
+
+[tool.poetry.dependencies]
+python = "^3.12"
+# Core Streamlit
+streamlit = "^1.28.0"
+# HTTP client for API communication
+requests = "^2.31.0"
+# Data manipulation and display
+pandas = "^2.0.0"
+# Interactive visualizations
+plotly = "^5.17.0"
+# Data validation (matching backend)
+pydantic = "^2.4.0"
+# Additional utilities
+python-dateutil = "^2.8.2"
+urllib3 = "^2.0.0"
+psutil = "^5.9.0"
+
+[tool.poetry.group.dev.dependencies]
+# Development utilities (if needed)
+pytest = "^7.4.0"  # For future frontend testing
+
+[tool.poetry.scripts]
+start = "streamlit run app.py"
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"

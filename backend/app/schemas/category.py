@@ -1,0 +1,117 @@
+"""Category Pydantic schemas for API requests and responses."""
+
+from typing import Optional
+from datetime import datetime
+from pydantic import BaseModel, Field, validator
+import re
+
+
+class CategoryBase(BaseModel):
+    """Base category schema with common fields."""
+    
+    name: str = Field(..., min_length=1, max_length=100, description="Category name")
+    description: Optional[str] = Field(None, max_length=500, description="Category description")
+    color: Optional[str] = Field(None, description="Category color in hex format (#RRGGBB)")
+    
+    @validator('name')
+    def validate_name(cls, v):
+        """Validate category name."""
+        if not v or not v.strip():
+            raise ValueError('Category name cannot be empty')
+        return v.strip()
+    
+    @validator('color')
+    def validate_color(cls, v):
+        """Validate color is in proper hex format."""
+        if v is None:
+            return v
+        
+        if not re.match(r'^#[0-9A-Fa-f]{6}$', v):
+            raise ValueError('Color must be in hex format (#RRGGBB)')
+        return v.upper()
+    
+    @validator('description')
+    def validate_description(cls, v):
+        """Validate and clean description."""
+        if v is not None:
+            v = v.strip()
+            if not v:
+                return None
+        return v
+
+
+class CategoryCreate(CategoryBase):
+    """Schema for creating a new category."""
+    pass
+
+
+class CategoryUpdate(BaseModel):
+    """Schema for updating an existing category."""
+    
+    name: Optional[str] = Field(None, min_length=1, max_length=100, description="Category name")
+    description: Optional[str] = Field(None, max_length=500, description="Category description")
+    color: Optional[str] = Field(None, description="Category color in hex format (#RRGGBB)")
+    
+    @validator('name')
+    def validate_name(cls, v):
+        """Validate category name."""
+        if v is not None and (not v or not v.strip()):
+            raise ValueError('Category name cannot be empty')
+        if v is not None:
+            v = v.strip()
+        return v
+    
+    @validator('color')
+    def validate_color(cls, v):
+        """Validate color is in proper hex format."""
+        if v is None:
+            return v
+        
+        if not re.match(r'^#[0-9A-Fa-f]{6}$', v):
+            raise ValueError('Color must be in hex format (#RRGGBB)')
+        return v.upper()
+    
+    @validator('description')
+    def validate_description(cls, v):
+        """Validate and clean description."""
+        if v is not None:
+            v = v.strip()
+            if not v:
+                return None
+        return v
+
+
+class CategoryResponse(CategoryBase):
+    """Schema for category API responses."""
+    
+    id: int = Field(..., description="Category ID")
+    created_at: datetime = Field(..., description="Creation timestamp")
+    updated_at: datetime = Field(..., description="Last update timestamp")
+    is_active: bool = Field(..., description="Active status flag")
+    
+    class Config:
+        from_attributes = True
+
+
+class CategoryListResponse(BaseModel):
+    """Schema for paginated category list responses."""
+    
+    categories: list[CategoryResponse] = Field(..., description="List of categories")
+    total: int = Field(..., description="Total number of categories")
+    page: int = Field(..., description="Current page number")
+    per_page: int = Field(..., description="Items per page")
+    pages: int = Field(..., description="Total number of pages")
+    
+    class Config:
+        from_attributes = True
+
+
+class CategoryStats(BaseModel):
+    """Schema for category statistics."""
+    
+    total_categories: int = Field(..., description="Total number of active categories")
+    inactive_categories: int = Field(..., description="Number of inactive categories")
+    most_used_color: Optional[str] = Field(None, description="Most commonly used color")
+    
+    class Config:
+        from_attributes = True
