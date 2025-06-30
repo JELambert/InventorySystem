@@ -76,6 +76,49 @@ class LocationValidationResponse(BaseModel):
     errors: List[str] = Field(default_factory=list, description="Validation error messages")
 
 
+class LocationSummary(BaseModel):
+    """Summary schema for location statistics."""
+    
+    id: int = Field(..., description="Location ID")
+    name: str = Field(..., description="Location name")
+    location_type: LocationType = Field(..., description="Location type")
+    child_count: int = Field(0, description="Number of direct children")
+    item_count: int = Field(0, description="Number of items stored")
+
+
+class LocationSearch(BaseModel):
+    """Schema for location search results."""
+    
+    locations: List[LocationResponse] = Field(default_factory=list, description="Found locations")
+    total: int = Field(0, description="Total number of matching locations")
+    has_more: bool = Field(False, description="Whether there are more results")
+
+
+class LocationStats(BaseModel):
+    """Schema for location statistics."""
+    
+    total_locations: int = Field(0, description="Total number of locations")
+    by_type: dict = Field(default_factory=dict, description="Count by location type")
+    max_depth: int = Field(0, description="Maximum hierarchy depth")
+    avg_children: float = Field(0.0, description="Average children per location")
+
+
+class LocationHierarchy(BaseModel):
+    """Schema for complete location hierarchy."""
+    
+    root_locations: List[LocationTree] = Field(default_factory=list, description="Root level locations")
+    total_locations: int = Field(0, description="Total locations in hierarchy")
+    max_depth: int = Field(0, description="Maximum depth in hierarchy")
+
+
+class LocationChildrenResponse(BaseModel):
+    """Schema for location children response."""
+    
+    parent: LocationResponse = Field(..., description="Parent location")
+    children: List[LocationResponse] = Field(default_factory=list, description="Child locations")
+    total_children: int = Field(0, description="Total number of children")
+
+
 # Update forward references
 LocationWithChildren.model_rebuild()
 LocationTree.model_rebuild()

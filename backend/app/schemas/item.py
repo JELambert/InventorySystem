@@ -206,7 +206,7 @@ class ItemSearch(BaseModel):
     
     # Sorting
     sort_by: Optional[str] = Field("name", description="Sort field (name, created_at, current_value, etc.)")
-    sort_order: Optional[str] = Field("asc", regex="^(asc|desc)$", description="Sort order")
+    sort_order: Optional[str] = Field("asc", pattern="^(asc|desc)$", description="Sort order")
     
     # Pagination
     skip: Optional[int] = Field(0, ge=0, description="Number of items to skip")
@@ -312,7 +312,7 @@ class ItemImportResult(BaseModel):
 class ItemExportRequest(BaseModel):
     """Schema for item export requests."""
     
-    format: str = Field("csv", regex="^(csv|json)$", description="Export format")
+    format: str = Field("csv", pattern="^(csv|json)$", description="Export format")
     filters: Optional[ItemSearch] = Field(None, description="Optional filters to apply")
     include_inactive: bool = Field(False, description="Include inactive (soft-deleted) items")
     include_computed_fields: bool = Field(True, description="Include computed fields in export")

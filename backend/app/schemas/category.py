@@ -115,3 +115,27 @@ class CategoryStats(BaseModel):
     
     class Config:
         from_attributes = True
+
+
+class CategorySummary(BaseModel):
+    """Summary schema for category information."""
+    
+    id: int = Field(..., description="Category ID")
+    name: str = Field(..., description="Category name")
+    color: Optional[str] = Field(None, description="Category color")
+    is_active: bool = Field(..., description="Active status")
+    item_count: int = Field(0, description="Number of items in this category")
+    location_count: int = Field(0, description="Number of locations using this category")
+    
+    class Config:
+        from_attributes = True
+
+
+class CategorySearch(BaseModel):
+    """Schema for category search parameters."""
+    
+    name: Optional[str] = Field(None, description="Search by name pattern")
+    is_active: Optional[bool] = Field(None, description="Filter by active status")
+    has_color: Optional[bool] = Field(None, description="Filter by whether category has color")
+    skip: int = Field(0, ge=0, description="Number of items to skip")
+    limit: int = Field(100, ge=1, le=1000, description="Number of items to return")
