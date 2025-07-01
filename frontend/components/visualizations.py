@@ -425,7 +425,7 @@ def create_location_statistics_cards(locations: List[Dict[str, Any]]) -> None:
     df = pd.DataFrame([{
         'type': loc.get('location_type', ''),
         'depth': loc.get('depth', 0),
-        'has_description': bool(loc.get('description', '').strip()),
+        'has_description': bool(safe_strip(loc.get('description', ''))),
         'created_at': _parse_datetime_safe(loc.get('created_at')),
         'is_root': loc.get('parent_id') is None
     } for loc in locations])
