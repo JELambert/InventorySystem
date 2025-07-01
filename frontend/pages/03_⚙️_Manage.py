@@ -13,7 +13,7 @@ from utils.helpers import (
     safe_api_call, show_error, show_success, show_warning,
     get_location_type_options, get_location_type_display,
     validate_location_form, handle_api_error, SessionManager,
-    safe_strip, safe_string_check, safe_string_or_none
+    safe_strip, safe_string_check, safe_string_or_none, safe_currency_format
 )
 from components.location_templates import show_bulk_operations
 from components.keyboard_shortcuts import (
@@ -714,9 +714,9 @@ def show_item_editing_interface():
             
             with col2:
                 if selected_item.get('current_value'):
-                    st.write(f"**Current Value:** ${selected_item['current_value']:.2f}")
+                    st.write(f"**Current Value:** {safe_currency_format(selected_item['current_value'])}")
                 if selected_item.get('purchase_price'):
-                    st.write(f"**Purchase Price:** ${selected_item['purchase_price']:.2f}")
+                    st.write(f"**Purchase Price:** {safe_currency_format(selected_item['purchase_price'])}")
                 st.write(f"**Created:** {selected_item.get('created_at', '').split('T')[0]}")
                 if selected_item.get('updated_at'):
                     st.write(f"**Updated:** {selected_item['updated_at'].split('T')[0]}")

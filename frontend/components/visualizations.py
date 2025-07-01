@@ -14,7 +14,7 @@ import numpy as np
 from typing import List, Dict, Any, Optional
 from datetime import datetime, timedelta
 
-from utils.helpers import get_location_type_display
+from utils.helpers import get_location_type_display, safe_strip
 
 
 def _parse_datetime_safe(dt_string):
@@ -55,7 +55,7 @@ class LocationVisualizationBuilder:
                 'full_path': loc.get('full_path', ''),
                 'created_at': self._parse_datetime(loc.get('created_at')),
                 'description_length': len(loc.get('description', '') or ''),
-                'has_description': bool(loc.get('description', '').strip()),
+                'has_description': bool(safe_strip(loc.get('description', ''))),
                 'path_length': len(loc.get('full_path', '').split('/')),
                 'is_root': loc.get('parent_id') is None
             })

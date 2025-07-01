@@ -444,13 +444,12 @@ def show_movement_analytics_interface():
                 # Movement insights
                 st.markdown("#### 💡 Movement Insights")
                 
-                col1, col2, col3 = st.columns(3)
-                
-                with col1:
+                # Use container to avoid nested columns
+                with st.container():
+                    # Display metrics in simple layout
                     avg_daily = len(movements) / max(1, (datetime.now().date() - movements_df['date'].min()).days)
                     st.metric("Avg Daily Movements", f"{avg_daily:.1f}")
-                
-                with col2:
+                    
                     most_moved_item = movements_df['item_id'].value_counts().index[0] if not movements_df.empty else None
                     if most_moved_item:
                         # Get item name
@@ -460,8 +459,7 @@ def show_movement_analytics_interface():
                         except:
                             item_name = f"Item {most_moved_item}"
                         st.metric("Most Moved Item", item_name[:20] + "..." if len(item_name) > 20 else item_name)
-                
-                with col3:
+                    
                     total_quantity = movements_df['quantity'].sum()
                     st.metric("Total Items Moved", total_quantity)
         
@@ -639,23 +637,23 @@ def show_system_health_monitoring():
         if validation_report:
             system_health = validation_report.get('system_health', {})
             
-            col1_metrics, col2_metrics, col3_metrics = st.columns(3)
-            
-            with col1_metrics:
+            # Use container and single column layout to avoid nesting
+            with st.container():
+                st.markdown("**📊 System Metrics**")
+                
+                # Display metrics in a simple layout
                 st.metric(
                     "Movements (24h)",
                     system_health.get('movements_last_24h', 0),
                     help="Total movements in the last 24 hours"
                 )
-            
-            with col2_metrics:
+                
                 st.metric(
                     "Active Rules",
                     system_health.get('validation_rules_active', 0),
                     help="Number of active business rules"
                 )
-            
-            with col3_metrics:
+                
                 api_status = "🟢 Online" if api_client.health_check() else "🔴 Offline"
                 st.metric("API Status", api_status)
             
