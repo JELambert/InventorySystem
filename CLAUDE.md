@@ -75,9 +75,28 @@ poetry run streamlit run app.py --server.port 8501
 
 # Testing
 cd backend
-poetry run pytest tests/               # Run backend tests
+poetry run pytest tests/               # Run all backend tests
+python run_tests.py                    # Run tests with Python path fix
+python run_tests.py tests/test_api_items_comprehensive.py -v  # Run specific API tests
+
+# API Testing (comprehensive coverage)
+python run_tests.py tests/test_api_items_comprehensive.py      # Items API (25+ endpoints)
+python run_tests.py tests/test_api_inventory_operations.py     # Inventory API (30+ endpoints) 
+python run_tests.py tests/test_api_performance_monitoring.py   # Performance API (8+ endpoints)
+python run_tests.py tests/test_api_integration_workflows.py    # Integration workflows
+python run_tests.py tests/test_api_error_scenarios.py          # Error handling
+python run_tests.py tests/test_api_validation_business_rules.py # Business rules
+
 cd frontend  
 poetry run pytest tests/               # Run frontend tests
+python run_frontend_tests.py           # Run frontend tests with path fix
+
+# Frontend Error Boundary Testing (comprehensive error handling)
+python run_frontend_tests.py --error-boundaries-only          # Run error boundary tests only
+python run_frontend_tests.py --category error_boundaries      # Error boundary components
+python run_frontend_tests.py --category error_handling        # Error handling infrastructure
+python run_frontend_tests.py --category page_boundaries       # Page-level error recovery
+python -m pytest tests/test_error_boundary_concepts.py -v     # Error handling concepts
 
 # Database operations
 cd backend
