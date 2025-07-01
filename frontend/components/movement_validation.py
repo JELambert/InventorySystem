@@ -127,34 +127,33 @@ def create_movement_validation_widget(
                 help="Type of movement operation"
             )
             
-            col1_form, col2_form = st.columns(2)
+            # Use simple layout to avoid nested columns
+            from_location_id = st.number_input(
+                "From Location ID",
+                min_value=0,
+                value=movement_data.get("from_location_id", 0) if movement_data else 0,
+                help="Source location (0 for none)"
+            )
             
-            with col1_form:
-                from_location_id = st.number_input(
-                    "From Location ID",
-                    min_value=0,
-                    value=movement_data.get("from_location_id", 0) if movement_data else 0,
-                    help="Source location (0 for none)"
-                )
-                quantity_moved = st.number_input(
-                    "Quantity*",
-                    min_value=1,
-                    value=movement_data.get("quantity_moved", 1) if movement_data else 1,
-                    help="Quantity to move"
-                )
+            to_location_id = st.number_input(
+                "To Location ID",
+                min_value=0,
+                value=movement_data.get("to_location_id", 0) if movement_data else 0,
+                help="Destination location (0 for none)"
+            )
             
-            with col2_form:
-                to_location_id = st.number_input(
-                    "To Location ID",
-                    min_value=0,
-                    value=movement_data.get("to_location_id", 0) if movement_data else 0,
-                    help="Destination location (0 for none)"
-                )
-                enforce_strict = st.checkbox(
-                    "Strict Validation",
-                    value=True,
-                    help="Enforce all business rules strictly"
-                )
+            quantity_moved = st.number_input(
+                "Quantity*",
+                min_value=1,
+                value=movement_data.get("quantity_moved", 1) if movement_data else 1,
+                help="Quantity to move"
+            )
+            
+            enforce_strict = st.checkbox(
+                "Strict Validation",
+                value=True,
+                help="Enforce all business rules strictly"
+            )
             
             reason = st.text_input(
                 "Reason",
@@ -350,33 +349,28 @@ def create_bulk_validation_widget(key_prefix: str = "bulk_validation") -> None:
                         st.rerun()
                     except Exception as e:
                         show_error(f"Bulk validation failed: {str(e)}")
+    
+    # Display bulk validation results (outside column structure to avoid nesting)
+    bulk_result = SessionManager.get(f"{key_prefix}_bulk_result")
+    if bulk_result:
+        st.markdown("---")
+        st.markdown("### 📊 Bulk Validation Results")
         
-        # Display bulk validation results
-        bulk_result = SessionManager.get(f"{key_prefix}_bulk_result")
-        if bulk_result:
-            st.markdown("---")
-            st.markdown("### 📊 Bulk Validation Results")
-            
-            overall = bulk_result.get("overall_result", {})
-            individual = bulk_result.get("individual_results", [])
-            
-            # Overall summary
-            col1, col2, col3 = st.columns(3)
-            
-            with col1:
-                st.metric("Total Movements", bulk_result.get("total_movements", 0))
-            
-            with col2:
-                st.metric("Valid Movements", bulk_result.get("valid_movements", 0))
-            
-            with col3:
-                st.metric("Failed Movements", bulk_result.get("failed_movements", 0))
-            
-            # Overall result
-            if overall.get("is_valid", False):
-                show_success("✅ All movements passed validation")
-            else:
-                show_error("❌ Bulk validation failed")
+        overall = bulk_result.get("overall_result", {})
+        individual = bulk_result.get("individual_results", [])
+        
+        # Overall summary - use simple layout to avoid nested columns
+        st.markdown("**📊 Summary Metrics**")
+        
+        st.metric("Total Movements", bulk_result.get("total_movements", 0))
+        st.metric("Valid Movements", bulk_result.get("valid_movements", 0))
+        st.metric("Failed Movements", bulk_result.get("failed_movements", 0))
+        
+        # Overall result
+        if overall.get("is_valid", False):
+            show_success("✅ All movements passed validation")
+        else:
+            show_error("❌ Bulk validation failed")
             
             # Display overall errors and warnings
             if overall.get("errors"):
@@ -465,19 +459,16 @@ def show_validation_report_widget(key_prefix: str = "validation_report") -> None
             if system_health:
                 st.markdown("**🏥 System Health:**")
                 
-                col1_health, col2_health = st.columns(2)
+                # Use simple layout to avoid nested columns
+                st.metric(
+                    "Movements (24h)", 
+                    system_health.get("movements_last_24h", 0)
+                )
                 
-                with col1_health:
-                    st.metric(
-                        "Movements (24h)", 
-                        system_health.get("movements_last_24h", 0)
-                    )
-                
-                with col2_health:
-                    st.metric(
-                        "Active Rules", 
-                        system_health.get("validation_rules_active", 0)
-                    )
+                st.metric(
+                    "Active Rules", 
+                    system_health.get("validation_rules_active", 0)
+                )
             
             # Validation statistics
             validation_stats = report.get("validation_statistics", {})
