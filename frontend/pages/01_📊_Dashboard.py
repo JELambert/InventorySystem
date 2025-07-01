@@ -58,7 +58,9 @@ def load_dashboard_data() -> Dict[str, Any]:
     def load_performance_metrics():
         try:
             return api_client.get_performance_metrics()
-        except:
+        except Exception as e:
+            # Silently handle performance metrics failure - not critical for dashboard
+            logger.debug(f"Performance metrics unavailable: {e}")
             return None
     
     # Load statistics with caching
@@ -763,41 +765,46 @@ def main():
         # Backend performance metrics
         if performance_metrics:
             st.markdown("### 🔧 Backend Performance")
-            with st.expander("Backend Metrics", expanded=False):
-                st.json(performance_metrics)
+            
+            # Check if metrics are available
+            if performance_metrics.get("cache_stats", {}).get("status") == "unavailable":
+                st.info("ℹ️ Backend performance metrics are currently unavailable. This may be normal if the backend is starting up.")
+            else:
+                with st.expander("Backend Metrics", expanded=False):
+                    st.json(performance_metrics)
         
         # Cache management buttons
         perf_actions_col1, perf_actions_col2, perf_actions_col3 = st.columns(3)
         
         with perf_actions_col1:
             if st.button("🔄 Warm Cache"):
-                try:
-                    api_client = st.session_state.api_client
-                    result = api_client.warm_cache()
+                api_client = st.session_state.api_client
+                result = api_client.warm_cache()
+                if result.get("status") == "unavailable":
+                    st.warning("⚠️ Cache warming is currently unavailable")
+                else:
                     st.success("Cache warmed successfully!")
                     st.json(result)
-                except Exception as e:
-                    st.error(f"Failed to warm cache: {e}")
         
         with perf_actions_col2:
             if st.button("📈 Create Indexes"):
-                try:
-                    api_client = st.session_state.api_client
-                    result = api_client.create_performance_indexes()
+                api_client = st.session_state.api_client
+                result = api_client.create_performance_indexes()
+                if result.get("status") == "unavailable":
+                    st.warning("⚠️ Performance index creation is currently unavailable")
+                else:
                     st.success("Performance indexes created!")
                     st.json(result)
-                except Exception as e:
-                    st.error(f"Failed to create indexes: {e}")
         
         with perf_actions_col3:
             if st.button("🧹 Clear Backend Cache"):
-                try:
-                    api_client = st.session_state.api_client
-                    result = api_client.clear_cache()
+                api_client = st.session_state.api_client
+                result = api_client.clear_cache()
+                if result.get("status") == "unavailable":
+                    st.warning("⚠️ Cache clearing is currently unavailable")
+                else:
                     st.success("Backend cache cleared!")
                     st.json(result)
-                except Exception as e:
-                    st.error(f"Failed to clear backend cache: {e}")
     
     st.markdown("---")
     

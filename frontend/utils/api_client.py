@@ -910,7 +910,16 @@ class APIClient:
         Returns:
             Performance metrics including cache stats and query analysis
         """
-        return self._make_request("GET", "performance/metrics")
+        try:
+            return self._make_request("GET", "performance/metrics", max_retries=1)
+        except Exception as e:
+            logger.debug(f"Performance metrics unavailable: {e}")
+            # Return minimal fallback metrics instead of raising error
+            return {
+                "cache_stats": {"status": "unavailable"},
+                "query_analysis": {"status": "unavailable"}, 
+                "optimization_status": {"caching_enabled": False}
+            }
     
     def get_cache_stats(self) -> dict:
         """
@@ -919,7 +928,11 @@ class APIClient:
         Returns:
             Cache statistics including hit rates and entry counts
         """
-        return self._make_request("GET", "performance/cache/stats")
+        try:
+            return self._make_request("GET", "performance/cache/stats", max_retries=1)
+        except Exception as e:
+            logger.debug(f"Cache stats unavailable: {e}")
+            return {"status": "unavailable", "message": "Cache statistics not available"}
     
     def warm_cache(self) -> dict:
         """
@@ -928,7 +941,11 @@ class APIClient:
         Returns:
             Result of cache warming operation
         """
-        return self._make_request("POST", "performance/cache/warm")
+        try:
+            return self._make_request("POST", "performance/cache/warm", max_retries=1)
+        except Exception as e:
+            logger.debug(f"Cache warming unavailable: {e}")
+            return {"status": "unavailable", "message": "Cache warming not available"}
     
     def clear_cache(self, pattern: Optional[str] = None) -> dict:
         """
@@ -940,11 +957,15 @@ class APIClient:
         Returns:
             Result of cache clearing operation
         """
-        params = {}
-        if pattern:
-            params["pattern"] = pattern
-        
-        return self._make_request("DELETE", "performance/cache/clear", params=params)
+        try:
+            params = {}
+            if pattern:
+                params["pattern"] = pattern
+            
+            return self._make_request("DELETE", "performance/cache/clear", params=params, max_retries=1)
+        except Exception as e:
+            logger.debug(f"Cache clearing unavailable: {e}")
+            return {"status": "unavailable", "message": "Cache clearing not available"}
     
     def analyze_queries(self) -> dict:
         """
@@ -953,7 +974,11 @@ class APIClient:
         Returns:
             Query analysis with performance recommendations
         """
-        return self._make_request("GET", "performance/query-analysis")
+        try:
+            return self._make_request("GET", "performance/query-analysis", max_retries=1)
+        except Exception as e:
+            logger.debug(f"Query analysis unavailable: {e}")
+            return {"status": "unavailable", "message": "Query analysis not available"}
     
     def create_performance_indexes(self) -> dict:
         """
@@ -962,7 +987,11 @@ class APIClient:
         Returns:
             Result of index creation with list of created indexes
         """
-        return self._make_request("POST", "performance/optimize/indexes")
+        try:
+            return self._make_request("POST", "performance/optimize/indexes", max_retries=1)
+        except Exception as e:
+            logger.debug(f"Performance index creation unavailable: {e}")
+            return {"status": "unavailable", "message": "Performance index creation not available"}
     
     def get_optimized_locations(self) -> List[dict]:
         """

@@ -396,15 +396,33 @@ async def warm_cache(db: AsyncSession) -> Dict[str, Any]:
 
 async def get_performance_metrics(db: AsyncSession) -> Dict[str, Any]:
     """Get current performance metrics."""
-    optimizer = QueryOptimizer(db)
-    analysis = await optimizer.analyze_query_performance()
-    
-    return {
-        "cache_stats": cache.stats(),
-        "query_analysis": analysis,
-        "optimization_status": {
-            "caching_enabled": True,
-            "indexes_recommended": len(analysis["missing_indexes"]),
-            "n_plus_one_risks": len(analysis["n_plus_one_risks"])
+    try:
+        optimizer = QueryOptimizer(db)
+        analysis = await optimizer.analyze_query_performance()
+        
+        return {
+            "cache_stats": cache.stats(),
+            "query_analysis": analysis,
+            "optimization_status": {
+                "caching_enabled": True,
+                "indexes_recommended": len(analysis.get("missing_indexes", [])),
+                "n_plus_one_risks": len(analysis.get("n_plus_one_risks", []))
+            }
         }
-    }
+    except Exception as e:
+        # Return basic metrics even if full analysis fails
+        return {
+            "cache_stats": cache.stats(),
+            "query_analysis": {
+                "status": "error",
+                "message": f"Analysis failed: {str(e)}",
+                "missing_indexes": [],
+                "n_plus_one_risks": []
+            },
+            "optimization_status": {
+                "caching_enabled": True,
+                "indexes_recommended": 0,
+                "n_plus_one_risks": 0,
+                "analysis_error": True
+            }
+        }
