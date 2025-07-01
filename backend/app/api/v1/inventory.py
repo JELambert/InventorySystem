@@ -13,6 +13,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.database.base import get_session
 from app.services.inventory_service import InventoryService
 from app.services.movement_validator import MovementValidator, ValidationError
+from app.performance import cache, invalidate_cache_on_changes, OptimizedInventoryService
 from app.schemas.inventory import (
     InventoryCreate, InventoryUpdate, InventoryResponse, InventoryWithDetails,
     InventorySearch, InventoryMove, InventorySummary, InventoryBulkOperation,
@@ -42,6 +43,11 @@ def get_movement_service(db: AsyncSession = Depends(get_session)) -> MovementSer
 def get_movement_validator(db: AsyncSession = Depends(get_session)) -> MovementValidator:
     """Dependency to get movement validator."""
     return MovementValidator(db)
+
+
+def get_optimized_service(db: AsyncSession = Depends(get_session)) -> OptimizedInventoryService:
+    """Dependency to get optimized inventory service."""
+    return OptimizedInventoryService(db)
 
 
 # Specific paths first, then parameterized paths
@@ -122,7 +128,50 @@ async def search_inventory(
     ]
 
 
+@router.get("/optimized", response_model=List[InventoryWithDetails])
+async def get_optimized_inventory(
+    limit: int = Query(100, description="Number of items to return"),
+    offset: int = Query(0, description="Number of items to skip"),
+    item_id: Optional[int] = Query(None, description="Filter by item ID"),
+    location_id: Optional[int] = Query(None, description="Filter by location ID"),
+    optimized_service: OptimizedInventoryService = Depends(get_optimized_service)
+):
+    """
+    Get inventory entries using optimized queries with caching and preloading.
+    
+    This endpoint is faster for large datasets as it uses optimized database queries
+    and caching to reduce response times.
+    """
+    inventory_entries = await optimized_service.get_inventory_with_preloading(
+        limit=limit,
+        offset=offset,
+        item_id=item_id,
+        location_id=location_id
+    )
+    
+    return [
+        InventoryWithDetails(
+            id=entry.id,
+            item_id=entry.item_id,
+            location_id=entry.location_id,
+            quantity=entry.quantity,
+            updated_at=entry.updated_at,
+            total_value=entry.total_value,
+            item=ItemSummary.model_validate(entry.item) if entry.item else None,
+            location=LocationSummary(
+                id=entry.location.id,
+                name=entry.location.name,
+                location_type=entry.location.location_type,
+                child_count=0,
+                item_count=0
+            ) if entry.location else None
+        )
+        for entry in inventory_entries
+    ]
+
+
 @router.post("/", response_model=InventoryResponse, status_code=status.HTTP_201_CREATED)
+@invalidate_cache_on_changes("inventory_create")
 async def create_inventory_entry(
     inventory_data: InventoryCreate,
     service: InventoryService = Depends(get_inventory_service)

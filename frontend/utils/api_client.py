@@ -692,3 +692,84 @@ class APIClient:
             Result of applying overrides with active rules
         """
         return self._make_request("POST", "inventory/validation/rules/override", data=overrides)
+    
+    # Performance and Optimization Methods
+    
+    def get_performance_metrics(self) -> dict:
+        """
+        Get current performance metrics and analysis.
+        
+        Returns:
+            Performance metrics including cache stats and query analysis
+        """
+        return self._make_request("GET", "performance/metrics")
+    
+    def get_cache_stats(self) -> dict:
+        """
+        Get cache statistics.
+        
+        Returns:
+            Cache statistics including hit rates and entry counts
+        """
+        return self._make_request("GET", "performance/cache/stats")
+    
+    def warm_cache(self) -> dict:
+        """
+        Warm up cache with frequently accessed data.
+        
+        Returns:
+            Result of cache warming operation
+        """
+        return self._make_request("POST", "performance/cache/warm")
+    
+    def clear_cache(self, pattern: Optional[str] = None) -> dict:
+        """
+        Clear cache entries.
+        
+        Args:
+            pattern: Optional pattern to clear specific entries
+            
+        Returns:
+            Result of cache clearing operation
+        """
+        params = {}
+        if pattern:
+            params["pattern"] = pattern
+        
+        return self._make_request("DELETE", "performance/cache/clear", params=params)
+    
+    def analyze_queries(self) -> dict:
+        """
+        Analyze query performance and get optimization recommendations.
+        
+        Returns:
+            Query analysis with performance recommendations
+        """
+        return self._make_request("GET", "performance/query-analysis")
+    
+    def create_performance_indexes(self) -> dict:
+        """
+        Create recommended database indexes for performance optimization.
+        
+        Returns:
+            Result of index creation with list of created indexes
+        """
+        return self._make_request("POST", "performance/optimize/indexes")
+    
+    def get_optimized_locations(self) -> List[dict]:
+        """
+        Get locations with counts using optimized cached query.
+        
+        Returns:
+            List of locations with item counts (cached)
+        """
+        return self._make_request("GET", "performance/optimized/locations")
+    
+    def get_optimized_categories(self) -> List[dict]:
+        """
+        Get categories using optimized cached query.
+        
+        Returns:
+            List of categories (cached)
+        """
+        return self._make_request("GET", "performance/optimized/categories")
