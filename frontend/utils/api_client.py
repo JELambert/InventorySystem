@@ -5,11 +5,19 @@ API client for communicating with the FastAPI backend.
 import requests
 import logging
 import time
-from typing import List, Dict, Any, Optional, Union
+import hashlib
+from typing import List, Dict, Any, Optional, Union, Callable
 from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
+from datetime import datetime, timedelta
+from functools import wraps
 
 from utils.config import AppConfig
+from utils.error_handling import (
+    ErrorContext, ErrorSeverity, ErrorCategory, RetryStrategy, CircuitBreaker, 
+    ErrorReporter, safe_execute, RetryManager
+)
+from utils.notifications import notification_manager
 
 logger = logging.getLogger(__name__)
 
@@ -25,13 +33,16 @@ class APIError(Exception):
 
 
 class APIClient:
-    """HTTP client for the Home Inventory System API."""
+    """HTTP client for the Home Inventory System API with enhanced error handling."""
     
     def __init__(self):
         """Initialize the API client with configuration."""
         self.base_url = AppConfig.API_BASE_URL
         self.timeout = AppConfig.API_TIMEOUT
         self.session = self._create_session()
+        self.circuit_breakers = {}  # Per-endpoint circuit breakers
+        self.request_stats = {}     # Request statistics
+        self.correlation_id_counter = 0
         
     def _create_session(self) -> requests.Session:
         """Create a configured requests session with retry logic."""
@@ -58,56 +69,207 @@ class APIClient:
         
         return session
     
+    def _generate_correlation_id(self) -> str:
+        """Generate unique correlation ID for request tracking."""
+        self.correlation_id_counter += 1
+        timestamp = datetime.now().strftime("%Y%m%d%H%M%S")
+        return f"{timestamp}_{self.correlation_id_counter:04d}"
+    
+    def _get_circuit_breaker(self, endpoint: str) -> CircuitBreaker:
+        """Get or create circuit breaker for endpoint."""
+        if endpoint not in self.circuit_breakers:
+            self.circuit_breakers[endpoint] = CircuitBreaker(
+                failure_threshold=5,
+                recovery_timeout=60
+            )
+        return self.circuit_breakers[endpoint]
+    
+    def _record_request_stats(self, endpoint: str, method: str, success: bool, duration: float):
+        """Record request statistics for monitoring."""
+        key = f"{method}:{endpoint}"
+        if key not in self.request_stats:
+            self.request_stats[key] = {
+                'total_requests': 0,
+                'successful_requests': 0,
+                'failed_requests': 0,
+                'avg_duration': 0.0,
+                'last_request': None
+            }
+        
+        stats = self.request_stats[key]
+        stats['total_requests'] += 1
+        stats['last_request'] = datetime.now()
+        
+        if success:
+            stats['successful_requests'] += 1
+        else:
+            stats['failed_requests'] += 1
+        
+        # Update average duration (simple moving average)
+        stats['avg_duration'] = (
+            (stats['avg_duration'] * (stats['total_requests'] - 1) + duration) / 
+            stats['total_requests']
+        )
+    
     def _make_request(
         self, 
         method: str, 
         endpoint: str, 
         data: Optional[dict] = None,
-        params: Optional[dict] = None
+        params: Optional[dict] = None,
+        retry_strategy: RetryStrategy = RetryStrategy.EXPONENTIAL,
+        max_retries: int = 3,
+        timeout_override: Optional[int] = None
     ) -> Union[dict, list]:
-        """Make an HTTP request to the API."""
+        """Make an HTTP request to the API with enhanced error handling and retries."""
         url = AppConfig.get_api_url(endpoint)
+        correlation_id = self._generate_correlation_id()
+        circuit_breaker = self._get_circuit_breaker(endpoint)
+        timeout = timeout_override or self.timeout
         
-        try:
-            logger.debug(f"Making {method} request to {url}")
+        # Check circuit breaker
+        if not circuit_breaker.can_execute():
+            error_msg = f"Circuit breaker is OPEN for endpoint {endpoint}. Service may be unavailable."
+            notification_manager.warning(error_msg)
+            raise APIError(error_msg, 503)
+        
+        def make_single_request() -> Union[dict, list]:
+            start_time = time.time()
             
-            if method.upper() == "GET":
-                response = self.session.get(url, params=params, timeout=self.timeout)
-            elif method.upper() == "POST":
-                response = self.session.post(url, json=data, params=params, timeout=self.timeout)
-            elif method.upper() == "PUT":
-                response = self.session.put(url, json=data, params=params, timeout=self.timeout)
-            elif method.upper() == "DELETE":
-                response = self.session.delete(url, params=params, timeout=self.timeout)
-            else:
-                raise APIError(f"Unsupported HTTP method: {method}")
-            
-            # Handle response
-            if response.status_code == 204:  # No content
-                return {}
-            
-            if not response.ok:
-                error_data = {}
-                try:
-                    error_data = response.json()
-                except:
-                    pass
+            try:
+                # Add correlation ID to headers
+                headers = {'X-Correlation-ID': correlation_id}
                 
-                error_message = error_data.get('detail', f"HTTP {response.status_code}")
-                raise APIError(
-                    message=error_message,
-                    status_code=response.status_code,
-                    response_data=error_data
+                logger.debug(f"Making {method} request to {url} [ID: {correlation_id}]")
+                
+                if method.upper() == "GET":
+                    response = self.session.get(url, params=params, timeout=timeout, headers=headers)
+                elif method.upper() == "POST":
+                    response = self.session.post(url, json=data, params=params, timeout=timeout, headers=headers)
+                elif method.upper() == "PUT":
+                    response = self.session.put(url, json=data, params=params, timeout=timeout, headers=headers)
+                elif method.upper() == "DELETE":
+                    response = self.session.delete(url, params=params, timeout=timeout, headers=headers)
+                else:
+                    raise APIError(f"Unsupported HTTP method: {method}")
+                
+                duration = time.time() - start_time
+                
+                # Handle response
+                if response.status_code == 204:  # No content
+                    circuit_breaker.record_success()
+                    self._record_request_stats(endpoint, method, True, duration)
+                    return {}
+                
+                if not response.ok:
+                    error_data = {}
+                    try:
+                        error_data = response.json()
+                    except:
+                        pass
+                    
+                    # Record failure for circuit breaker and stats
+                    if response.status_code >= 500:
+                        circuit_breaker.record_failure()
+                    
+                    self._record_request_stats(endpoint, method, False, duration)
+                    
+                    error_message = error_data.get('detail', f"HTTP {response.status_code}")
+                    api_error = APIError(
+                        message=error_message,
+                        status_code=response.status_code,
+                        response_data=error_data
+                    )
+                    
+                    # Report error with context
+                    error_context = ErrorContext(
+                        error=api_error,
+                        severity=ErrorSeverity.HIGH if response.status_code >= 500 else ErrorSeverity.MEDIUM,
+                        category=ErrorCategory.NETWORK,
+                        context_data={
+                            'endpoint': endpoint,
+                            'method': method,
+                            'correlation_id': correlation_id,
+                            'status_code': response.status_code
+                        }
+                    )
+                    ErrorReporter.report_error(error_context)
+                    
+                    raise api_error
+                
+                # Success
+                circuit_breaker.record_success()
+                self._record_request_stats(endpoint, method, True, duration)
+                
+                return response.json()
+                
+            except requests.exceptions.ConnectionError as e:
+                duration = time.time() - start_time
+                circuit_breaker.record_failure()
+                self._record_request_stats(endpoint, method, False, duration)
+                
+                connection_error = APIError("Unable to connect to the API server. Please check if the backend is running.")
+                error_context = ErrorContext(
+                    error=connection_error,
+                    severity=ErrorSeverity.HIGH,
+                    category=ErrorCategory.NETWORK,
+                    context_data={
+                        'endpoint': endpoint,
+                        'method': method,
+                        'correlation_id': correlation_id,
+                        'original_error': str(e)
+                    }
                 )
-            
-            return response.json()
-            
-        except requests.exceptions.ConnectionError:
-            raise APIError("Unable to connect to the API server. Please check if the backend is running.")
-        except requests.exceptions.Timeout:
-            raise APIError(f"Request timed out after {self.timeout} seconds.")
-        except requests.exceptions.RequestException as e:
-            raise APIError(f"Request failed: {str(e)}")
+                ErrorReporter.report_error(error_context)
+                raise connection_error
+                
+            except requests.exceptions.Timeout as e:
+                duration = time.time() - start_time
+                circuit_breaker.record_failure()
+                self._record_request_stats(endpoint, method, False, duration)
+                
+                timeout_error = APIError(f"Request timed out after {timeout} seconds.")
+                error_context = ErrorContext(
+                    error=timeout_error,
+                    severity=ErrorSeverity.MEDIUM,
+                    category=ErrorCategory.NETWORK,
+                    context_data={
+                        'endpoint': endpoint,
+                        'method': method,
+                        'correlation_id': correlation_id,
+                        'timeout': timeout
+                    }
+                )
+                ErrorReporter.report_error(error_context)
+                raise timeout_error
+                
+            except requests.exceptions.RequestException as e:
+                duration = time.time() - start_time
+                circuit_breaker.record_failure()
+                self._record_request_stats(endpoint, method, False, duration)
+                
+                request_error = APIError(f"Request failed: {str(e)}")
+                error_context = ErrorContext(
+                    error=request_error,
+                    severity=ErrorSeverity.MEDIUM,
+                    category=ErrorCategory.NETWORK,
+                    context_data={
+                        'endpoint': endpoint,
+                        'method': method,
+                        'correlation_id': correlation_id,
+                        'original_error': str(e)
+                    }
+                )
+                ErrorReporter.report_error(error_context)
+                raise request_error
+        
+        # Execute with retry logic
+        return safe_execute(
+            make_single_request,
+            error_message=f"API request to {endpoint} failed",
+            retry_strategy=retry_strategy,
+            max_retries=max_retries
+        )
     
     # Health and Status Methods
     
@@ -620,11 +782,57 @@ class APIClient:
     # Utility Methods
     
     def get_connection_info(self) -> dict:
-        """Get information about the API connection."""
+        """Get comprehensive information about the API connection."""
         return {
             "base_url": self.base_url,
             "timeout": self.timeout,
-            "is_connected": self.health_check()
+            "is_connected": self.health_check(),
+            "circuit_breakers": {
+                endpoint: {
+                    "state": cb.state,
+                    "failure_count": cb.failure_count,
+                    "last_failure": cb.last_failure_time.isoformat() if cb.last_failure_time else None
+                }
+                for endpoint, cb in self.circuit_breakers.items()
+            },
+            "request_stats": self.request_stats
+        }
+    
+    def reset_circuit_breakers(self):
+        """Reset all circuit breakers to CLOSED state."""
+        for cb in self.circuit_breakers.values():
+            cb.failure_count = 0
+            cb.state = "CLOSED"
+            cb.last_failure_time = None
+        notification_manager.info("All circuit breakers have been reset")
+    
+    def get_api_health_report(self) -> dict:
+        """Get comprehensive API health report."""
+        total_requests = sum(stats['total_requests'] for stats in self.request_stats.values())
+        successful_requests = sum(stats['successful_requests'] for stats in self.request_stats.values())
+        failed_requests = sum(stats['failed_requests'] for stats in self.request_stats.values())
+        
+        success_rate = (successful_requests / total_requests * 100) if total_requests > 0 else 0
+        
+        # Check circuit breaker health
+        open_breakers = [endpoint for endpoint, cb in self.circuit_breakers.items() if cb.state == "OPEN"]
+        
+        return {
+            "overall_health": "healthy" if success_rate > 90 and not open_breakers else "degraded",
+            "success_rate": round(success_rate, 2),
+            "total_requests": total_requests,
+            "successful_requests": successful_requests,
+            "failed_requests": failed_requests,
+            "open_circuit_breakers": open_breakers,
+            "endpoint_performance": {
+                endpoint: {
+                    "success_rate": round((stats['successful_requests'] / stats['total_requests'] * 100), 2)
+                    if stats['total_requests'] > 0 else 0,
+                    "avg_duration_ms": round(stats['avg_duration'] * 1000, 2),
+                    "total_requests": stats['total_requests']
+                }
+                for endpoint, stats in self.request_stats.items()
+            }
         }
     
     # Movement Validation Methods
