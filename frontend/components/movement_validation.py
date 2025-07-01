@@ -14,7 +14,7 @@ import logging
 from utils.api_client import APIClient, APIError
 from utils.helpers import (
     safe_api_call, show_error, show_success, show_warning, show_info,
-    handle_api_error, SessionManager
+    handle_api_error, SessionManager, safe_strip
 )
 
 logger = logging.getLogger(__name__)
@@ -173,7 +173,7 @@ def create_movement_validation_widget(
                     "quantity_moved": quantity_moved,
                     "from_location_id": from_location_id if from_location_id > 0 else None,
                     "to_location_id": to_location_id if to_location_id > 0 else None,
-                    "reason": reason if reason.strip() else None
+                    "reason": reason if safe_strip(reason) else None
                 }
                 
                 # Perform validation
@@ -313,7 +313,7 @@ def create_bulk_validation_widget(key_prefix: str = "bulk_validation") -> None:
                     "from_location_id": from_location_id if from_location_id > 0 else None,
                     "to_location_id": to_location_id if to_location_id > 0 else None,
                     "quantity_moved": quantity_moved,
-                    "reason": reason if reason.strip() else None
+                    "reason": reason if safe_strip(reason) else None
                 }
                 st.session_state[f"{key_prefix}_movements"].append(new_movement)
                 st.rerun()
