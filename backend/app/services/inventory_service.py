@@ -20,6 +20,7 @@ from app.schemas.inventory import (
     InventorySearch, InventoryMove, InventorySummary, InventoryBulkOperation,
     ItemLocationHistory, LocationInventoryReport
 )
+from app.schemas.movement_history import MovementHistoryCreate
 
 
 class InventoryService:
@@ -200,7 +201,7 @@ class InventoryService:
         result = await self.db.execute(query)
         return result.scalars().all()
 
-    async def move_item(self, item_id: int, move_data: InventoryMove) -> Inventory:
+    async def move_item(self, item_id: int, move_data: InventoryMove, user_id: Optional[str] = None, reason: Optional[str] = None) -> Inventory:
         """
         Move items between locations.
         
@@ -262,14 +263,43 @@ class InventoryService:
             )
             self.db.add(dest_entry)
         
+        # Store quantities for movement history
+        source_quantity_before = source_entry.quantity
+        dest_quantity_before = dest_entry.quantity if dest_entry else 0
+        
         # Update source entry
         if source_entry.quantity == move_data.quantity:
             # Remove source entry if moving all items
             await self.db.delete(source_entry)
+            source_quantity_after = 0
         else:
             # Reduce quantity at source
             source_entry.quantity -= move_data.quantity
             source_entry.updated_at = datetime.now()
+            source_quantity_after = source_entry.quantity
+        
+        dest_quantity_after = dest_quantity_before + move_data.quantity
+        
+        # Record movement history
+        try:
+            from app.services.movement_service import MovementService
+            movement_service = MovementService(self.db)
+            
+            await movement_service.record_item_move(
+                item_id=item_id,
+                from_location_id=move_data.from_location_id,
+                to_location_id=move_data.to_location_id,
+                quantity=move_data.quantity,
+                quantity_before_from=source_quantity_before,
+                quantity_after_from=source_quantity_after,
+                quantity_before_to=dest_quantity_before,
+                quantity_after_to=dest_quantity_after,
+                reason=reason,
+                user_id=user_id
+            )
+        except Exception as e:
+            # Log the error but don't fail the operation
+            print(f"Warning: Failed to record movement history: {e}")
         
         await self.db.commit()
         await self.db.refresh(dest_entry)
@@ -452,3 +482,306 @@ class InventoryService:
             ],
             utilization=None  # Could be calculated based on location capacity if implemented
         )
+
+    # Advanced Quantity Operations
+
+    async def split_item_quantity(
+        self, 
+        item_id: int, 
+        source_location_id: int, 
+        dest_location_id: int, 
+        quantity_to_move: int,
+        user_id: Optional[str] = None,
+        reason: Optional[str] = None
+    ) -> tuple[Inventory, Inventory]:
+        """
+        Split item quantity between two locations.
+        
+        Args:
+            item_id: ID of item to split
+            source_location_id: Source location ID
+            dest_location_id: Destination location ID  
+            quantity_to_move: Quantity to move to destination
+            user_id: User performing the operation
+            reason: Reason for the split
+            
+        Returns:
+            Tuple of (source_entry, dest_entry) after split
+            
+        Raises:
+            ValueError: If validation fails or insufficient quantity
+        """
+        if source_location_id == dest_location_id:
+            raise ValueError("Source and destination locations must be different")
+        
+        # Get source inventory entry
+        result = await self.db.execute(
+            select(Inventory).where(
+                and_(
+                    Inventory.item_id == item_id,
+                    Inventory.location_id == source_location_id
+                )
+            )
+        )
+        source_entry = result.scalar_one_or_none()
+        if not source_entry:
+            raise ValueError(f"Item {item_id} not found at location {source_location_id}")
+        
+        if source_entry.quantity < quantity_to_move:
+            raise ValueError(f"Insufficient quantity. Available: {source_entry.quantity}, Requested: {quantity_to_move}")
+        
+        if quantity_to_move <= 0:
+            raise ValueError("Quantity to move must be positive")
+        
+        # Check if destination location exists
+        result = await self.db.execute(select(Location).where(Location.id == dest_location_id))
+        if not result.scalar_one_or_none():
+            raise ValueError(f"Destination location {dest_location_id} not found")
+        
+        # Get or create destination entry
+        result = await self.db.execute(
+            select(Inventory).where(
+                and_(
+                    Inventory.item_id == item_id,
+                    Inventory.location_id == dest_location_id
+                )
+            )
+        )
+        dest_entry = result.scalar_one_or_none()
+        
+        # Store original quantities for history
+        source_quantity_before = source_entry.quantity
+        dest_quantity_before = dest_entry.quantity if dest_entry else 0
+        
+        # Update quantities
+        source_entry.quantity -= quantity_to_move
+        source_entry.updated_at = datetime.now()
+        
+        if dest_entry:
+            dest_entry.quantity += quantity_to_move
+            dest_entry.updated_at = datetime.now()
+        else:
+            dest_entry = Inventory(
+                item_id=item_id,
+                location_id=dest_location_id,
+                quantity=quantity_to_move
+            )
+            self.db.add(dest_entry)
+        
+        # Record movement history
+        try:
+            from app.services.movement_service import MovementService
+            movement_service = MovementService(self.db)
+            
+            await movement_service.record_item_move(
+                item_id=item_id,
+                from_location_id=source_location_id,
+                to_location_id=dest_location_id,
+                quantity=quantity_to_move,
+                quantity_before_from=source_quantity_before,
+                quantity_after_from=source_entry.quantity,
+                quantity_before_to=dest_quantity_before,
+                quantity_after_to=dest_entry.quantity,
+                reason=reason or "Quantity split operation",
+                user_id=user_id
+            )
+        except Exception as e:
+            print(f"Warning: Failed to record movement history: {e}")
+        
+        await self.db.commit()
+        await self.db.refresh(source_entry)
+        await self.db.refresh(dest_entry)
+        
+        return source_entry, dest_entry
+
+    async def merge_item_quantities(
+        self, 
+        item_id: int, 
+        location_ids: List[int],
+        target_location_id: int,
+        user_id: Optional[str] = None,
+        reason: Optional[str] = None
+    ) -> Inventory:
+        """
+        Merge item quantities from multiple locations into one target location.
+        
+        Args:
+            item_id: ID of item to merge
+            location_ids: List of source location IDs to merge from
+            target_location_id: Target location ID for merged quantity
+            user_id: User performing the operation
+            reason: Reason for the merge
+            
+        Returns:
+            Target inventory entry with merged quantity
+            
+        Raises:
+            ValueError: If validation fails or target location in source list
+        """
+        if target_location_id in location_ids:
+            raise ValueError("Target location cannot be in the source locations list")
+        
+        if not location_ids:
+            raise ValueError("At least one source location must be specified")
+        
+        # Get all source inventory entries
+        result = await self.db.execute(
+            select(Inventory).where(
+                and_(
+                    Inventory.item_id == item_id,
+                    Inventory.location_id.in_(location_ids)
+                )
+            )
+        )
+        source_entries = result.scalars().all()
+        
+        if not source_entries:
+            raise ValueError(f"No inventory entries found for item {item_id} in specified locations")
+        
+        # Calculate total quantity to merge
+        total_quantity = sum(entry.quantity for entry in source_entries)
+        
+        # Check if target location exists
+        result = await self.db.execute(select(Location).where(Location.id == target_location_id))
+        if not result.scalar_one_or_none():
+            raise ValueError(f"Target location {target_location_id} not found")
+        
+        # Get or create target entry
+        result = await self.db.execute(
+            select(Inventory).where(
+                and_(
+                    Inventory.item_id == item_id,
+                    Inventory.location_id == target_location_id
+                )
+            )
+        )
+        target_entry = result.scalar_one_or_none()
+        
+        target_quantity_before = target_entry.quantity if target_entry else 0
+        
+        if target_entry:
+            target_entry.quantity += total_quantity
+            target_entry.updated_at = datetime.now()
+        else:
+            target_entry = Inventory(
+                item_id=item_id,
+                location_id=target_location_id,
+                quantity=total_quantity
+            )
+            self.db.add(target_entry)
+        
+        # Record movement history for each source location
+        try:
+            from app.services.movement_service import MovementService
+            movement_service = MovementService(self.db)
+            
+            for source_entry in source_entries:
+                await movement_service.record_item_move(
+                    item_id=item_id,
+                    from_location_id=source_entry.location_id,
+                    to_location_id=target_location_id,
+                    quantity=source_entry.quantity,
+                    quantity_before_from=source_entry.quantity,
+                    quantity_after_from=0,
+                    quantity_before_to=target_quantity_before,
+                    quantity_after_to=target_entry.quantity,
+                    reason=reason or "Quantity merge operation",
+                    user_id=user_id
+                )
+        except Exception as e:
+            print(f"Warning: Failed to record movement history: {e}")
+        
+        # Remove source entries
+        for source_entry in source_entries:
+            await self.db.delete(source_entry)
+        
+        await self.db.commit()
+        await self.db.refresh(target_entry)
+        
+        return target_entry
+
+    async def adjust_item_quantity(
+        self, 
+        item_id: int, 
+        location_id: int, 
+        new_quantity: int,
+        user_id: Optional[str] = None,
+        reason: Optional[str] = None
+    ) -> Optional[Inventory]:
+        """
+        Adjust item quantity at a specific location.
+        
+        Args:
+            item_id: ID of item to adjust
+            location_id: Location ID where adjustment occurs
+            new_quantity: New quantity (0 removes the entry)
+            user_id: User performing the operation
+            reason: Reason for the adjustment
+            
+        Returns:
+            Updated inventory entry or None if removed
+            
+        Raises:
+            ValueError: If validation fails
+        """
+        if new_quantity < 0:
+            raise ValueError("Quantity cannot be negative")
+        
+        # Get inventory entry
+        result = await self.db.execute(
+            select(Inventory).where(
+                and_(
+                    Inventory.item_id == item_id,
+                    Inventory.location_id == location_id
+                )
+            )
+        )
+        inventory_entry = result.scalar_one_or_none()
+        
+        if not inventory_entry and new_quantity == 0:
+            # Nothing to do - entry doesn't exist and we want 0
+            return None
+        
+        if not inventory_entry and new_quantity > 0:
+            # Create new entry
+            inventory_entry = Inventory(
+                item_id=item_id,
+                location_id=location_id,
+                quantity=new_quantity
+            )
+            self.db.add(inventory_entry)
+            quantity_before = 0
+        else:
+            quantity_before = inventory_entry.quantity
+        
+        # Record movement history
+        try:
+            from app.services.movement_service import MovementService
+            movement_service = MovementService(self.db)
+            
+            await movement_service.record_quantity_adjustment(
+                item_id=item_id,
+                location_id=location_id,
+                quantity_before=quantity_before,
+                quantity_after=new_quantity,
+                reason=reason or "Manual quantity adjustment",
+                user_id=user_id
+            )
+        except Exception as e:
+            print(f"Warning: Failed to record movement history: {e}")
+        
+        if new_quantity == 0 and inventory_entry:
+            # Remove entry if quantity is 0
+            await self.db.delete(inventory_entry)
+            result_entry = None
+        else:
+            # Update quantity
+            inventory_entry.quantity = new_quantity
+            inventory_entry.updated_at = datetime.now()
+            result_entry = inventory_entry
+        
+        await self.db.commit()
+        if result_entry:
+            await self.db.refresh(result_entry)
+        
+        return result_entry

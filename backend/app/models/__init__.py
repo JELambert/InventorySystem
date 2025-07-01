@@ -8,6 +8,7 @@ from .location import Location, LocationType
 from .category import Category
 from .item import Item, ItemType, ItemCondition, ItemStatus
 from .inventory import Inventory
+from .item_movement_history import ItemMovementHistory
 
 __all__ = [
     "Location",
@@ -17,5 +18,6 @@ __all__ = [
     "ItemType",
     "ItemCondition", 
     "ItemStatus",
-    "Inventory"
+    "Inventory",
+    "ItemMovementHistory"
 ]

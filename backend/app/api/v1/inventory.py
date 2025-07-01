@@ -6,6 +6,7 @@ quantity tracking, and movement between locations.
 """
 
 from typing import List, Optional
+from datetime import datetime
 from fastapi import APIRouter, Depends, HTTPException, status, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -16,6 +17,13 @@ from app.schemas.inventory import (
     InventorySearch, InventoryMove, InventorySummary, InventoryBulkOperation,
     ItemLocationHistory, LocationInventoryReport
 )
+from app.schemas.item import ItemSummary
+from app.schemas.location import LocationSummary
+from app.schemas.movement_history import (
+    MovementHistorySearch, MovementHistoryWithDetails, MovementHistorySummary,
+    ItemMovementTimeline
+)
+from app.services.movement_service import MovementService
 
 router = APIRouter()
 
@@ -23,6 +31,11 @@ router = APIRouter()
 def get_inventory_service(db: AsyncSession = Depends(get_session)) -> InventoryService:
     """Dependency to get inventory service."""
     return InventoryService(db)
+
+
+def get_movement_service(db: AsyncSession = Depends(get_session)) -> MovementService:
+    """Dependency to get movement service."""
+    return MovementService(db)
 
 
 # Specific paths first, then parameterized paths
@@ -90,8 +103,14 @@ async def search_inventory(
             quantity=entry.quantity,
             updated_at=entry.updated_at,
             total_value=entry.total_value,
-            item=entry.item,
-            location=entry.location
+            item=ItemSummary.model_validate(entry.item) if entry.item else None,
+            location=LocationSummary(
+                id=entry.location.id,
+                name=entry.location.name,
+                location_type=entry.location.location_type,
+                child_count=0,  # We can set this to 0 for now
+                item_count=0   # We can set this to 0 for now
+            ) if entry.location else None
         )
         for entry in inventory_entries
     ]
@@ -161,8 +180,14 @@ async def get_item_locations(
             quantity=entry.quantity,
             updated_at=entry.updated_at,
             total_value=entry.total_value,
-            item=entry.item,
-            location=entry.location
+            item=ItemSummary.model_validate(entry.item) if entry.item else None,
+            location=LocationSummary(
+                id=entry.location.id,
+                name=entry.location.name,
+                location_type=entry.location.location_type,
+                child_count=0,  # We can set this to 0 for now
+                item_count=0   # We can set this to 0 for now
+            ) if entry.location else None
         )
         for entry in inventory_entries
     ]
@@ -184,8 +209,14 @@ async def get_location_items(
             quantity=entry.quantity,
             updated_at=entry.updated_at,
             total_value=entry.total_value,
-            item=entry.item,
-            location=entry.location
+            item=ItemSummary.model_validate(entry.item) if entry.item else None,
+            location=LocationSummary(
+                id=entry.location.id,
+                name=entry.location.name,
+                location_type=entry.location.location_type,
+                child_count=0,  # We can set this to 0 for now
+                item_count=0   # We can set this to 0 for now
+            ) if entry.location else None
         )
         for entry in inventory_entries
     ]
@@ -205,6 +236,117 @@ async def get_location_inventory_report(
         )
     
     return report
+
+
+# Movement History Endpoints
+
+@router.get("/history", response_model=List[MovementHistoryWithDetails])
+async def get_movement_history(
+    item_id: Optional[int] = Query(None, description="Filter by item ID"),
+    location_id: Optional[int] = Query(None, description="Filter by either source or destination location ID"),
+    from_location_id: Optional[int] = Query(None, description="Filter by source location ID"),
+    to_location_id: Optional[int] = Query(None, description="Filter by destination location ID"),
+    movement_type: Optional[str] = Query(None, description="Filter by movement type"),
+    user_id: Optional[str] = Query(None, description="Filter by user ID"),
+    start_date: Optional[datetime] = Query(None, description="Filter movements after this date"),
+    end_date: Optional[datetime] = Query(None, description="Filter movements before this date"),
+    min_quantity: Optional[int] = Query(None, description="Minimum quantity moved"),
+    max_quantity: Optional[int] = Query(None, description="Maximum quantity moved"),
+    skip: int = Query(0, description="Number of records to skip"),
+    limit: int = Query(100, description="Maximum number of records to return"),
+    service: MovementService = Depends(get_movement_service)
+):
+    """
+    Get movement history with filtering and pagination.
+    
+    Returns chronological list of item movements including location changes,
+    quantity adjustments, and audit trail information.
+    """
+    search_params = MovementHistorySearch(
+        item_id=item_id,
+        location_id=location_id,
+        from_location_id=from_location_id,
+        to_location_id=to_location_id,
+        movement_type=movement_type,
+        user_id=user_id,
+        start_date=start_date,
+        end_date=end_date,
+        min_quantity=min_quantity,
+        max_quantity=max_quantity
+    )
+    
+    movements = await service.get_movement_history(search_params, skip, limit)
+    
+    return [
+        MovementHistoryWithDetails(
+            id=movement.id,
+            item_id=movement.item_id,
+            from_location_id=movement.from_location_id,
+            to_location_id=movement.to_location_id,
+            quantity_moved=movement.quantity_moved,
+            quantity_before=movement.quantity_before,
+            quantity_after=movement.quantity_after,
+            movement_type=movement.movement_type,
+            reason=movement.reason,
+            notes=movement.notes,
+            estimated_value=movement.estimated_value,
+            user_id=movement.user_id,
+            system_notes=movement.system_notes,
+            created_at=movement.created_at,
+            movement_description=movement.movement_description,
+            item=ItemSummary.model_validate(movement.item) if movement.item else None,
+            from_location=LocationSummary(
+                id=movement.from_location.id,
+                name=movement.from_location.name,
+                location_type=movement.from_location.location_type,
+                child_count=0,
+                item_count=0
+            ) if movement.from_location else None,
+            to_location=LocationSummary(
+                id=movement.to_location.id,
+                name=movement.to_location.name,
+                location_type=movement.to_location.location_type,
+                child_count=0,
+                item_count=0
+            ) if movement.to_location else None
+        )
+        for movement in movements
+    ]
+
+
+@router.get("/history/summary", response_model=MovementHistorySummary)
+async def get_movement_history_summary(
+    start_date: Optional[datetime] = Query(None, description="Filter movements after this date"),
+    end_date: Optional[datetime] = Query(None, description="Filter movements before this date"),
+    service: MovementService = Depends(get_movement_service)
+):
+    """
+    Get movement history summary statistics.
+    
+    Provides overview of movement activity including totals, trends,
+    and recent activity.
+    """
+    return await service.get_movement_summary(start_date, end_date)
+
+
+@router.get("/items/{item_id}/timeline", response_model=ItemMovementTimeline)
+async def get_item_movement_timeline(
+    item_id: int,
+    service: MovementService = Depends(get_movement_service)
+):
+    """
+    Get complete movement timeline for a specific item.
+    
+    Returns chronological history of all movements for an item
+    including current location status.
+    """
+    try:
+        return await service.get_item_movement_timeline(item_id)
+    except ValueError as e:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=str(e)
+        )
 
 
 @router.get("/{inventory_id}", response_model=InventoryWithDetails)
@@ -270,4 +412,130 @@ async def delete_inventory_entry(
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"Inventory entry with ID {inventory_id} not found"
+        )
+
+
+# Advanced Quantity Operations
+
+@router.post("/items/{item_id}/split", response_model=None)
+async def split_item_quantity(
+    item_id: int,
+    split_data: dict,  # {source_location_id, dest_location_id, quantity_to_move, reason?}
+    user_id: Optional[str] = Query(None, description="User performing the operation"),
+    service: InventoryService = Depends(get_inventory_service)
+):
+    """
+    Split item quantity between two locations.
+    
+    Moves specified quantity from source location to destination location,
+    maintaining accurate quantity tracking at both locations.
+    """
+    try:
+        source_entry, dest_entry = await service.split_item_quantity(
+            item_id=item_id,
+            source_location_id=split_data["source_location_id"],
+            dest_location_id=split_data["dest_location_id"],
+            quantity_to_move=split_data["quantity_to_move"],
+            user_id=user_id,
+            reason=split_data.get("reason")
+        )
+        
+        return [
+            {
+                "id": source_entry.id,
+                "item_id": source_entry.item_id,
+                "location_id": source_entry.location_id,
+                "quantity": source_entry.quantity,
+                "updated_at": source_entry.updated_at.isoformat() if source_entry.updated_at else None
+            },
+            {
+                "id": dest_entry.id,
+                "item_id": dest_entry.item_id,
+                "location_id": dest_entry.location_id,
+                "quantity": dest_entry.quantity,
+                "updated_at": dest_entry.updated_at.isoformat() if dest_entry.updated_at else None
+            }
+        ]
+    except ValueError as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(e)
+        )
+
+
+@router.post("/items/{item_id}/merge", response_model=None)
+async def merge_item_quantities(
+    item_id: int,
+    merge_data: dict,  # {location_ids: List[int], target_location_id: int, reason?}
+    user_id: Optional[str] = Query(None, description="User performing the operation"),
+    service: InventoryService = Depends(get_inventory_service)
+):
+    """
+    Merge item quantities from multiple locations into one target location.
+    
+    Consolidates all quantities from source locations into the target location,
+    removing the source entries and creating/updating the target entry.
+    """
+    try:
+        target_entry = await service.merge_item_quantities(
+            item_id=item_id,
+            location_ids=merge_data["location_ids"],
+            target_location_id=merge_data["target_location_id"],
+            user_id=user_id,
+            reason=merge_data.get("reason")
+        )
+        
+        return {
+            "id": target_entry.id,
+            "item_id": target_entry.item_id,
+            "location_id": target_entry.location_id,
+            "quantity": target_entry.quantity,
+            "updated_at": target_entry.updated_at.isoformat() if target_entry.updated_at else None
+        }
+    except ValueError as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(e)
+        )
+
+
+@router.put("/items/{item_id}/locations/{location_id}/quantity", response_model=None)
+async def adjust_item_quantity(
+    item_id: int,
+    location_id: int,
+    adjustment_data: dict,  # {new_quantity: int, reason?}
+    user_id: Optional[str] = Query(None, description="User performing the operation"),
+    service: InventoryService = Depends(get_inventory_service)
+):
+    """
+    Adjust item quantity at a specific location.
+    
+    Sets the quantity to the specified value. Use 0 to remove the item
+    from the location entirely.
+    """
+    try:
+        result_entry = await service.adjust_item_quantity(
+            item_id=item_id,
+            location_id=location_id,
+            new_quantity=adjustment_data["new_quantity"],
+            user_id=user_id,
+            reason=adjustment_data.get("reason")
+        )
+        
+        if result_entry:
+            # Create a simple response without relying on SQLAlchemy properties
+            return {
+                "id": result_entry.id,
+                "item_id": result_entry.item_id,
+                "location_id": result_entry.location_id,
+                "quantity": result_entry.quantity,
+                "updated_at": result_entry.updated_at.isoformat() if result_entry.updated_at else None
+            }
+        else:
+            # Entry was removed (quantity set to 0)
+            return {"message": "Item removed from location", "item_id": item_id, "location_id": location_id}
+    except ValueError as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(e)
         )

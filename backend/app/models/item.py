@@ -236,6 +236,9 @@ class Item(Base):
     inventory_entries: Mapped[List["Inventory"]] = relationship(
         "Inventory", back_populates="item", cascade="all, delete-orphan"
     )
+    movement_history: Mapped[List["ItemMovementHistory"]] = relationship(
+        "ItemMovementHistory", back_populates="item", cascade="all, delete-orphan"
+    )
     
     def __init__(self, **kwargs):
         """Initialize Item with default values."""

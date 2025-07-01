@@ -13,7 +13,8 @@ from typing import List, Dict, Any, Optional
 from utils.api_client import APIClient, APIError
 from utils.helpers import (
     safe_api_call, show_error, show_success, show_warning,
-    handle_api_error, SessionManager, validate_hex_color
+    handle_api_error, SessionManager, validate_hex_color,
+    safe_strip, safe_string_check, safe_string_or_none
 )
 from components.keyboard_shortcuts import (
     enable_keyboard_shortcuts, show_keyboard_shortcuts_help,
@@ -163,7 +164,8 @@ def create_category_form(category: Optional[dict] = None, mode: str = "create") 
             # Validation
             errors = []
             
-            if not name or not name.strip():
+            stripped_name = safe_strip(name)
+            if not stripped_name:
                 errors.append("Category name is required")
             
             if color and not validate_hex_color(color):
@@ -176,8 +178,8 @@ def create_category_form(category: Optional[dict] = None, mode: str = "create") 
             
             # Return form data
             return {
-                "name": name.strip(),
-                "description": description.strip() if description else None,
+                "name": stripped_name,
+                "description": safe_string_or_none(description),
                 "color": color.upper() if color else None
             }
     

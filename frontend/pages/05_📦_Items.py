@@ -13,7 +13,8 @@ from datetime import datetime
 from utils.api_client import APIClient, APIError
 from utils.helpers import (
     safe_api_call, show_error, show_success, show_warning,
-    handle_api_error, SessionManager, safe_currency_format, format_datetime
+    handle_api_error, SessionManager, safe_currency_format, format_datetime,
+    safe_strip, safe_string_check, safe_string_or_none
 )
 from components.keyboard_shortcuts import (
     enable_keyboard_shortcuts, show_keyboard_shortcuts_help,
@@ -230,7 +231,7 @@ def create_search_filters() -> Dict[str, Any]:
         "max_value": max_value if max_value < 10000 else None,
         "start_date": start_date,
         "end_date": end_date,
-        "tags": [tag.strip() for tag in tag_filter.split(",") if tag.strip()] if tag_filter else []
+        "tags": [safe_strip(tag) for tag in (tag_filter or "").split(",") if safe_string_check(tag)] if tag_filter else []
     }
 
 def create_item_dataframe(items: List[Dict], show_inventory: bool = True) -> pd.DataFrame:
@@ -332,7 +333,7 @@ def display_item_details(item: Dict):
     # Tags
     if item.get("tags"):
         st.subheader("Tags")
-        tags = [tag.strip() for tag in item["tags"].split(",") if tag.strip()]
+        tags = [safe_strip(tag) for tag in safe_strip(item["tags"]).split(",") if safe_string_check(tag)]
         tag_cols = st.columns(len(tags)) if tags else []
         for i, tag in enumerate(tags):
             with tag_cols[i]:
@@ -781,7 +782,8 @@ def show_item_creation_form():
         submitted = st.form_submit_button("✅ Create Item", type="primary", use_container_width=True)
         
         if submitted:
-            if not name.strip():
+            stripped_name = safe_strip(name)
+            if not stripped_name:
                 st.error("Item name is required")
                 return
             
@@ -791,7 +793,7 @@ def show_item_creation_form():
             
             # Prepare item data including location and quantity
             item_data = {
-                "name": name.strip(),
+                "name": stripped_name,
                 "item_type": item_type,
                 "condition": condition,
                 "status": status,
@@ -799,19 +801,29 @@ def show_item_creation_form():
                 "quantity": quantity
             }
             
-            # Add optional fields
-            if description.strip():
-                item_data["description"] = description.strip()
+            # Add optional fields using safe string helpers
+            description_clean = safe_string_or_none(description)
+            if description_clean:
+                item_data["description"] = description_clean
             if selected_category_id:
                 item_data["category_id"] = selected_category_id
-            if brand.strip():
-                item_data["brand"] = brand.strip()
-            if model.strip():
-                item_data["model"] = model.strip()
-            if serial_number.strip():
-                item_data["serial_number"] = serial_number.strip()
-            if barcode.strip():
-                item_data["barcode"] = barcode.strip()
+            
+            brand_clean = safe_string_or_none(brand)
+            if brand_clean:
+                item_data["brand"] = brand_clean
+            
+            model_clean = safe_string_or_none(model)
+            if model_clean:
+                item_data["model"] = model_clean
+            
+            serial_number_clean = safe_string_or_none(serial_number)
+            if serial_number_clean:
+                item_data["serial_number"] = serial_number_clean
+            
+            barcode_clean = safe_string_or_none(barcode)
+            if barcode_clean:
+                item_data["barcode"] = barcode_clean
+            
             if purchase_price > 0:
                 item_data["purchase_price"] = purchase_price
             if current_value > 0:
@@ -822,14 +834,22 @@ def show_item_creation_form():
                 item_data["warranty_expiry"] = warranty_expiry.isoformat()
             if weight > 0:
                 item_data["weight"] = weight
-            if color.strip():
-                item_data["color"] = color.strip()
-            if dimensions.strip():
-                item_data["dimensions"] = dimensions.strip()
-            if tags.strip():
-                item_data["tags"] = tags.strip()
-            if notes.strip():
-                item_data["notes"] = notes.strip()
+            
+            color_clean = safe_string_or_none(color)
+            if color_clean:
+                item_data["color"] = color_clean
+            
+            dimensions_clean = safe_string_or_none(dimensions)
+            if dimensions_clean:
+                item_data["dimensions"] = dimensions_clean
+            
+            tags_clean = safe_string_or_none(tags)
+            if tags_clean:
+                item_data["tags"] = tags_clean
+            
+            notes_clean = safe_string_or_none(notes)
+            if notes_clean:
+                item_data["notes"] = notes_clean
             
             # Create the item with location assignment
             with st.spinner("Creating item and assigning to location..."):

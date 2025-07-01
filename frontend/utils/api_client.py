@@ -462,6 +462,161 @@ class APIClient:
         
         return items
     
+    # Advanced Quantity Operations
+    
+    def split_item_quantity(self, item_id: int, split_data: dict, user_id: Optional[str] = None) -> List[dict]:
+        """
+        Split item quantity between two locations.
+        
+        Args:
+            item_id: ID of item to split
+            split_data: Dictionary with source_location_id, dest_location_id, quantity_to_move, reason
+            user_id: Optional user performing the operation
+            
+        Returns:
+            List of [source_entry, dest_entry] after split
+        """
+        params = {}
+        if user_id:
+            params["user_id"] = user_id
+        
+        return self._make_request("POST", f"inventory/items/{item_id}/split", data=split_data, params=params)
+    
+    def merge_item_quantities(self, item_id: int, merge_data: dict, user_id: Optional[str] = None) -> dict:
+        """
+        Merge item quantities from multiple locations into one target location.
+        
+        Args:
+            item_id: ID of item to merge
+            merge_data: Dictionary with location_ids (list), target_location_id, reason
+            user_id: Optional user performing the operation
+            
+        Returns:
+            Target inventory entry with merged quantity
+        """
+        params = {}
+        if user_id:
+            params["user_id"] = user_id
+        
+        return self._make_request("POST", f"inventory/items/{item_id}/merge", data=merge_data, params=params)
+    
+    def adjust_item_quantity(self, item_id: int, location_id: int, adjustment_data: dict, user_id: Optional[str] = None) -> dict:
+        """
+        Adjust item quantity at a specific location.
+        
+        Args:
+            item_id: ID of item to adjust
+            location_id: Location ID where adjustment occurs
+            adjustment_data: Dictionary with new_quantity, reason
+            user_id: Optional user performing the operation
+            
+        Returns:
+            Updated inventory entry or removal confirmation
+        """
+        params = {}
+        if user_id:
+            params["user_id"] = user_id
+        
+        return self._make_request("PUT", f"inventory/items/{item_id}/locations/{location_id}/quantity", 
+                                 data=adjustment_data, params=params)
+    
+    # Movement History Methods
+    
+    def get_movement_history(
+        self,
+        item_id: Optional[int] = None,
+        location_id: Optional[int] = None,
+        from_location_id: Optional[int] = None,
+        to_location_id: Optional[int] = None,
+        movement_type: Optional[str] = None,
+        user_id: Optional[str] = None,
+        start_date: Optional[str] = None,
+        end_date: Optional[str] = None,
+        min_quantity: Optional[int] = None,
+        max_quantity: Optional[int] = None,
+        skip: int = 0,
+        limit: int = 100
+    ) -> List[dict]:
+        """
+        Get movement history with filtering and pagination.
+        
+        Args:
+            item_id: Filter by item ID
+            location_id: Filter by either source or destination location ID
+            from_location_id: Filter by source location ID
+            to_location_id: Filter by destination location ID
+            movement_type: Filter by movement type
+            user_id: Filter by user ID
+            start_date: Filter movements after this date (ISO format)
+            end_date: Filter movements before this date (ISO format)
+            min_quantity: Minimum quantity moved
+            max_quantity: Maximum quantity moved
+            skip: Number of records to skip
+            limit: Maximum number of records to return
+            
+        Returns:
+            List of movement history entries with details
+        """
+        params = {"skip": skip, "limit": limit}
+        
+        if item_id is not None:
+            params["item_id"] = item_id
+        if location_id is not None:
+            params["location_id"] = location_id
+        if from_location_id is not None:
+            params["from_location_id"] = from_location_id
+        if to_location_id is not None:
+            params["to_location_id"] = to_location_id
+        if movement_type:
+            params["movement_type"] = movement_type
+        if user_id:
+            params["user_id"] = user_id
+        if start_date:
+            params["start_date"] = start_date
+        if end_date:
+            params["end_date"] = end_date
+        if min_quantity is not None:
+            params["min_quantity"] = min_quantity
+        if max_quantity is not None:
+            params["max_quantity"] = max_quantity
+        
+        return self._make_request("GET", "inventory/history", params=params)
+    
+    def get_movement_history_summary(
+        self,
+        start_date: Optional[str] = None,
+        end_date: Optional[str] = None
+    ) -> dict:
+        """
+        Get movement history summary statistics.
+        
+        Args:
+            start_date: Optional start date for filtering (ISO format)
+            end_date: Optional end date for filtering (ISO format)
+            
+        Returns:
+            Summary statistics and recent activity
+        """
+        params = {}
+        if start_date:
+            params["start_date"] = start_date
+        if end_date:
+            params["end_date"] = end_date
+        
+        return self._make_request("GET", "inventory/history/summary", params=params)
+    
+    def get_item_movement_timeline(self, item_id: int) -> dict:
+        """
+        Get complete movement timeline for a specific item.
+        
+        Args:
+            item_id: ID of the item
+            
+        Returns:
+            Complete movement timeline with current status
+        """
+        return self._make_request("GET", f"inventory/items/{item_id}/timeline")
+    
     # Utility Methods
     
     def get_connection_info(self) -> dict:

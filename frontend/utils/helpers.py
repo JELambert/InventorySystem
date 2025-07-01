@@ -76,11 +76,12 @@ def safe_float_format(value: Any, default: float = 0.0, format_str: str = ".2f")
         if value is None:
             numeric_value = default
         elif isinstance(value, str):
-            # Handle empty strings
-            if not value.strip():
+            # Handle empty strings using safe_strip
+            stripped = safe_strip(value)
+            if not stripped:
                 numeric_value = default
             else:
-                numeric_value = float(value)
+                numeric_value = float(stripped)
         elif isinstance(value, (int, float)):
             numeric_value = float(value)
         else:
@@ -126,7 +127,7 @@ def safe_int_convert(value: Any, default: int = 0) -> int:
         if value is None:
             return default
         elif isinstance(value, str):
-            if not value.strip():
+            if not safe_strip(value):
                 return default
             # Handle string numbers that might be floats
             return int(float(value))
@@ -137,6 +138,49 @@ def safe_int_convert(value: Any, default: int = 0) -> int:
     except (ValueError, TypeError):
         logger.warning(f"Could not convert value '{value}' to int, using default {default}")
         return default
+
+
+def safe_strip(value: Any) -> str:
+    """Safely strip string values, handling None and non-string types.
+    
+    Args:
+        value: Value to strip (can be None, string, or other types)
+        
+    Returns:
+        Stripped string or empty string if None/invalid
+    """
+    if value is None:
+        return ""
+    try:
+        return str(value).strip()
+    except (AttributeError, TypeError):
+        return ""
+
+
+def safe_string_check(value: Any) -> bool:
+    """Check if a value contains meaningful string content after stripping.
+    
+    Args:
+        value: Value to check
+        
+    Returns:
+        True if value has content after stripping, False otherwise
+    """
+    stripped = safe_strip(value)
+    return bool(stripped)
+
+
+def safe_string_or_none(value: Any) -> Optional[str]:
+    """Convert value to stripped string or None if empty.
+    
+    Args:
+        value: Value to convert
+        
+    Returns:
+        Stripped string if has content, None if empty/None
+    """
+    stripped = safe_strip(value)
+    return stripped if stripped else None
 
 
 def create_category_display(category_id: Optional[int], categories: List[Dict[str, Any]]) -> str:
@@ -216,9 +260,10 @@ def validate_location_form(name: str, location_type: str) -> List[str]:
     """Validate location form data and return list of errors."""
     errors = []
     
-    if not name or not name.strip():
+    stripped_name = safe_strip(name)
+    if not stripped_name:
         errors.append("Location name is required")
-    elif len(name.strip()) > 255:
+    elif len(stripped_name) > 255:
         errors.append("Location name must be 255 characters or less")
     
     if not location_type:

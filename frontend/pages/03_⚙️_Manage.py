@@ -12,7 +12,8 @@ from utils.api_client import APIClient, APIError
 from utils.helpers import (
     safe_api_call, show_error, show_success, show_warning,
     get_location_type_options, get_location_type_display,
-    validate_location_form, handle_api_error, SessionManager
+    validate_location_form, handle_api_error, SessionManager,
+    safe_strip, safe_string_check, safe_string_or_none
 )
 from components.location_templates import show_bulk_operations
 from components.keyboard_shortcuts import (
@@ -228,8 +229,8 @@ def create_location_form(
         if submit_button:
             # Prepare location data
             form_data = {
-                'name': name.strip(),
-                'description': description.strip() if description else None,
+                'name': safe_strip(name),
+                'description': safe_string_or_none(description),
                 'location_type': selected_type,
                 'parent_id': selected_parent_id,
                 'category_id': selected_category_id
@@ -567,31 +568,42 @@ def show_item_creation_form():
         submitted = st.form_submit_button("✅ Create Item", type="primary", use_container_width=True)
         
         if submitted:
-            if not name.strip():
+            stripped_name = safe_strip(name)
+            if not stripped_name:
                 st.error("Item name is required")
                 return
             
             # Prepare item data (location_id will be handled via inventory)
             item_data = {
-                "name": name.strip(),
+                "name": stripped_name,
                 "item_type": item_type,
                 "condition": condition,
                 "status": status
             }
             
-            # Add optional fields if provided
-            if description.strip():
-                item_data["description"] = description.strip()
+            # Add optional fields if provided using safe string helpers
+            description_clean = safe_string_or_none(description)
+            if description_clean:
+                item_data["description"] = description_clean
             if selected_category_id:
                 item_data["category_id"] = selected_category_id
-            if brand.strip():
-                item_data["brand"] = brand.strip()
-            if model.strip():
-                item_data["model"] = model.strip()
-            if serial_number.strip():
-                item_data["serial_number"] = serial_number.strip()
-            if barcode.strip():
-                item_data["barcode"] = barcode.strip()
+            
+            brand_clean = safe_string_or_none(brand)
+            if brand_clean:
+                item_data["brand"] = brand_clean
+            
+            model_clean = safe_string_or_none(model)
+            if model_clean:
+                item_data["model"] = model_clean
+            
+            serial_number_clean = safe_string_or_none(serial_number)
+            if serial_number_clean:
+                item_data["serial_number"] = serial_number_clean
+            
+            barcode_clean = safe_string_or_none(barcode)
+            if barcode_clean:
+                item_data["barcode"] = barcode_clean
+            
             if purchase_price > 0:
                 item_data["purchase_price"] = purchase_price
             if current_value > 0:
@@ -602,14 +614,22 @@ def show_item_creation_form():
                 item_data["warranty_expiry"] = warranty_expiry.isoformat()
             if weight > 0:
                 item_data["weight"] = weight
-            if color.strip():
-                item_data["color"] = color.strip()
-            if dimensions.strip():
-                item_data["dimensions"] = dimensions.strip()
-            if tags.strip():
-                item_data["tags"] = tags.strip()
-            if notes.strip():
-                item_data["notes"] = notes.strip()
+            
+            color_clean = safe_string_or_none(color)
+            if color_clean:
+                item_data["color"] = color_clean
+            
+            dimensions_clean = safe_string_or_none(dimensions)
+            if dimensions_clean:
+                item_data["dimensions"] = dimensions_clean
+            
+            tags_clean = safe_string_or_none(tags)
+            if tags_clean:
+                item_data["tags"] = tags_clean
+            
+            notes_clean = safe_string_or_none(notes)
+            if notes_clean:
+                item_data["notes"] = notes_clean
             
             # Create the item
             with st.spinner("Creating item..."):
