@@ -119,7 +119,8 @@ class APIClient:
         params: Optional[dict] = None,
         retry_strategy: RetryStrategy = RetryStrategy.EXPONENTIAL,
         max_retries: int = 3,
-        timeout_override: Optional[int] = None
+        timeout_override: Optional[int] = None,
+        silent: bool = False
     ) -> Union[dict, list]:
         """Make an HTTP request to the API with enhanced error handling and retries."""
         url = AppConfig.get_api_url(endpoint)
@@ -130,7 +131,8 @@ class APIClient:
         # Check circuit breaker
         if not circuit_breaker.can_execute():
             error_msg = f"Circuit breaker is OPEN for endpoint {endpoint}. Service may be unavailable."
-            notification_manager.warning(error_msg)
+            if not silent:
+                notification_manager.warning(error_msg)
             raise APIError(error_msg, 503)
         
         def make_single_request() -> Union[dict, list]:
@@ -264,12 +266,35 @@ class APIClient:
                 raise request_error
         
         # Execute with retry logic
-        return safe_execute(
-            make_single_request,
-            error_message=f"API request to {endpoint} failed",
-            retry_strategy=retry_strategy,
-            max_retries=max_retries
-        )
+        if silent:
+            # For silent requests, handle errors without user notification
+            attempt = 0
+            last_error = None
+            
+            while attempt <= max_retries:
+                try:
+                    return make_single_request()
+                except Exception as e:
+                    last_error = e
+                    if attempt < max_retries and RetryManager.should_retry(e, attempt, max_retries):
+                        delay = RetryManager.calculate_delay(attempt, retry_strategy)
+                        if delay > 0:
+                            time.sleep(delay)
+                        attempt += 1
+                        continue
+                    else:
+                        break
+            
+            # Silent failure - just raise the last error without user notification
+            if last_error:
+                raise last_error
+        else:
+            return safe_execute(
+                make_single_request,
+                error_message=f"API request to {endpoint} failed",
+                retry_strategy=retry_strategy,
+                max_retries=max_retries
+            )
     
     # Health and Status Methods
     
@@ -911,7 +936,7 @@ class APIClient:
             Performance metrics including cache stats and query analysis
         """
         try:
-            return self._make_request("GET", "performance/metrics", max_retries=1)
+            return self._make_request("GET", "performance/metrics", max_retries=1, silent=True)
         except Exception as e:
             logger.debug(f"Performance metrics unavailable: {e}")
             # Return minimal fallback metrics instead of raising error
@@ -929,7 +954,7 @@ class APIClient:
             Cache statistics including hit rates and entry counts
         """
         try:
-            return self._make_request("GET", "performance/cache/stats", max_retries=1)
+            return self._make_request("GET", "performance/cache/stats", max_retries=1, silent=True)
         except Exception as e:
             logger.debug(f"Cache stats unavailable: {e}")
             return {"status": "unavailable", "message": "Cache statistics not available"}
@@ -942,7 +967,7 @@ class APIClient:
             Result of cache warming operation
         """
         try:
-            return self._make_request("POST", "performance/cache/warm", max_retries=1)
+            return self._make_request("POST", "performance/cache/warm", max_retries=1, silent=True)
         except Exception as e:
             logger.debug(f"Cache warming unavailable: {e}")
             return {"status": "unavailable", "message": "Cache warming not available"}
@@ -962,7 +987,7 @@ class APIClient:
             if pattern:
                 params["pattern"] = pattern
             
-            return self._make_request("DELETE", "performance/cache/clear", params=params, max_retries=1)
+            return self._make_request("DELETE", "performance/cache/clear", params=params, max_retries=1, silent=True)
         except Exception as e:
             logger.debug(f"Cache clearing unavailable: {e}")
             return {"status": "unavailable", "message": "Cache clearing not available"}
@@ -975,7 +1000,7 @@ class APIClient:
             Query analysis with performance recommendations
         """
         try:
-            return self._make_request("GET", "performance/query-analysis", max_retries=1)
+            return self._make_request("GET", "performance/query-analysis", max_retries=1, silent=True)
         except Exception as e:
             logger.debug(f"Query analysis unavailable: {e}")
             return {"status": "unavailable", "message": "Query analysis not available"}
@@ -988,7 +1013,7 @@ class APIClient:
             Result of index creation with list of created indexes
         """
         try:
-            return self._make_request("POST", "performance/optimize/indexes", max_retries=1)
+            return self._make_request("POST", "performance/optimize/indexes", max_retries=1, silent=True)
         except Exception as e:
             logger.debug(f"Performance index creation unavailable: {e}")
             return {"status": "unavailable", "message": "Performance index creation not available"}
