@@ -96,89 +96,92 @@ def show_drag_drop_interface():
     # Load data
     api_client = APIClient()
     
-    col1, col2 = st.columns([1, 3])
-    
-    with col1:
-        # Filter controls
+    # Filter controls section
+    with st.container():
         st.markdown("#### 🎛️ Filters")
         
-        # Item type filter
-        item_types = ["all", "electronics", "furniture", "clothing", "books", "tools", "kitchen", "other"]
-        selected_type = st.selectbox("Item Type:", item_types, format_func=lambda x: x.title())
+        # Create filter controls in a horizontal layout
+        filter_col1, filter_col2, filter_col3, filter_col4 = st.columns(4)
         
-        # Location type filter  
-        location_types = ["all", "house", "room", "container", "shelf"]
-        selected_location_type = st.selectbox("Location Type:", location_types, format_func=lambda x: x.title())
+        with filter_col1:
+            # Item type filter
+            item_types = ["all", "electronics", "furniture", "clothing", "books", "tools", "kitchen", "other"]
+            selected_type = st.selectbox("Item Type:", item_types, format_func=lambda x: x.title())
         
-        # Only show items with inventory
-        show_only_inventory = st.checkbox("Only items in inventory", value=True)
+        with filter_col2:
+            # Location type filter  
+            location_types = ["all", "house", "room", "container", "shelf"]
+            selected_location_type = st.selectbox("Location Type:", location_types, format_func=lambda x: x.title())
         
-        # Refresh button
-        if st.button("🔄 Refresh Data", help="Reload items and locations"):
-            if 'movement_items_cache' in st.session_state:
-                del st.session_state.movement_items_cache
-            if 'movement_locations_cache' in st.session_state:
-                del st.session_state.movement_locations_cache
-            st.rerun()
+        with filter_col3:
+            # Only show items with inventory
+            show_only_inventory = st.checkbox("Only items in inventory", value=True)
+        
+        with filter_col4:
+            # Refresh button
+            if st.button("🔄 Refresh Data", help="Reload items and locations"):
+                if 'movement_items_cache' in st.session_state:
+                    del st.session_state.movement_items_cache
+                if 'movement_locations_cache' in st.session_state:
+                    del st.session_state.movement_locations_cache
+                st.rerun()
     
-    with col2:
-        # Load items and locations
-        with st.spinner("Loading items and locations..."):
-            # Load items
-            if 'movement_items_cache' not in st.session_state:
-                item_params = {}
-                if selected_type != "all":
-                    item_params["item_type"] = selected_type
-                
-                if show_only_inventory:
-                    items = safe_api_call(
-                        lambda: api_client.get_items_with_inventory(**item_params),
-                        "Failed to load items with inventory"
-                    ) or []
-                else:
-                    items = safe_api_call(
-                        lambda: api_client.get_items(**item_params),
-                        "Failed to load items"
-                    ) or []
-                
-                st.session_state.movement_items_cache = items
-            else:
-                items = st.session_state.movement_items_cache
+    # Data loading section
+    with st.spinner("Loading items and locations..."):
+        # Load items
+        if 'movement_items_cache' not in st.session_state:
+            item_params = {}
+            if selected_type != "all":
+                item_params["item_type"] = selected_type
             
-            # Load locations
-            if 'movement_locations_cache' not in st.session_state:
-                location_params = {"skip": 0, "limit": 1000}
-                if selected_location_type != "all":
-                    location_params["location_type"] = selected_location_type
-                
-                locations = safe_api_call(
-                    lambda: api_client.get_locations(**location_params),
-                    "Failed to load locations"
+            if show_only_inventory:
+                items = safe_api_call(
+                    lambda: api_client.get_items_with_inventory(**item_params),
+                    "Failed to load items with inventory"
                 ) or []
-                
-                st.session_state.movement_locations_cache = locations
             else:
-                locations = st.session_state.movement_locations_cache
-        
-        # Display drag and drop interface
-        if items and locations:
-            create_drag_drop_movement_interface(items, locations)
+                items = safe_api_call(
+                    lambda: api_client.get_items(**item_params),
+                    "Failed to load items"
+                ) or []
+            
+            st.session_state.movement_items_cache = items
         else:
-            st.info("No items or locations available for movement operations.")
+            items = st.session_state.movement_items_cache
+        
+        # Load locations
+        if 'movement_locations_cache' not in st.session_state:
+            location_params = {"skip": 0, "limit": 1000}
+            if selected_location_type != "all":
+                location_params["location_type"] = selected_location_type
+            
+            locations = safe_api_call(
+                lambda: api_client.get_locations(**location_params),
+                "Failed to load locations"
+            ) or []
+            
+            st.session_state.movement_locations_cache = locations
+        else:
+            locations = st.session_state.movement_locations_cache
+    
+    # Display drag and drop interface
+    if items and locations:
+        create_drag_drop_movement_interface(items, locations)
+    else:
+        st.info("No items or locations available for movement operations.")
 
 
 def show_movement_history_interface():
     """Display the movement history interface."""
     st.markdown("### 📊 Movement History & Audit Trail")
     
-    # Movement history controls
-    col1, col2 = st.columns([1, 3])
+    api_client = APIClient()
     
-    with col1:
+    # History filters section
+    with st.container():
         st.markdown("#### 🔍 History Filters")
         
-        # Item selection for filtering
-        api_client = APIClient()
+        # Load items for filtering
         items = safe_api_call(
             lambda: api_client.get_items(skip=0, limit=1000),
             "Failed to load items for filtering"
@@ -188,76 +191,86 @@ def show_movement_history_interface():
         item_options.update({item['id']: f"{item['name']} - {item.get('item_type', '').replace('_', ' ').title()}" 
                            for item in items})
         
-        selected_item_filter = st.selectbox(
-            "Filter by Item:",
-            options=list(item_options.keys()),
-            format_func=lambda x: item_options[x]
-        )
+        # Create filter controls in horizontal layout
+        filter_col1, filter_col2, filter_col3 = st.columns(3)
         
-        item_id_filter = None if selected_item_filter == "all" else selected_item_filter
-        
-        # Quick time period buttons
-        st.markdown("**Quick Time Filters:**")
-        
-        time_filters = {
-            "today": "Today",
-            "week": "This Week", 
-            "month": "This Month",
-            "quarter": "This Quarter",
-            "all": "All Time"
-        }
-        
-        selected_time = st.radio("Time Period:", list(time_filters.keys()), 
-                                format_func=lambda x: time_filters[x], index=1)
-        
-        # Movement type filter
-        movement_types = ["all", "create", "move", "adjust"]
-        selected_movement_type = st.selectbox(
-            "Movement Type:",
-            movement_types,
-            format_func=lambda x: x.title() if x != "all" else "All Types"
-        )
-        
-        # User filter
-        user_filter = st.text_input("User Filter:", placeholder="Enter user ID")
-        
-        # Show summary button
-        show_summary = st.checkbox("Show Summary Stats", value=True)
-    
-    with col2:
-        # Display movement history with filters
-        history_params = {}
-        
-        if item_id_filter:
-            history_params['item_id'] = item_id_filter
-        
-        if selected_movement_type != "all":
-            history_params['movement_type'] = selected_movement_type
-        
-        if user_filter:
-            history_params['user_id'] = user_filter
-        
-        # Calculate date range based on time filter
-        if selected_time != "all":
-            now = datetime.now()
-            if selected_time == "today":
-                start_date = now.replace(hour=0, minute=0, second=0, microsecond=0)
-            elif selected_time == "week":
-                start_date = now - timedelta(days=7)
-            elif selected_time == "month":
-                start_date = now - timedelta(days=30)
-            elif selected_time == "quarter":
-                start_date = now - timedelta(days=90)
+        with filter_col1:
+            selected_item_filter = st.selectbox(
+                "Filter by Item:",
+                options=list(item_options.keys()),
+                format_func=lambda x: item_options[x]
+            )
             
-            history_params['start_date'] = start_date.isoformat()
+            item_id_filter = None if selected_item_filter == "all" else selected_item_filter
         
-        # Display movement history
-        create_movement_history_panel(item_id_filter)
+        with filter_col2:
+            # Time period filter
+            time_filters = {
+                "today": "Today",
+                "week": "This Week", 
+                "month": "This Month",
+                "quarter": "This Quarter",
+                "all": "All Time"
+            }
+            
+            selected_time = st.selectbox(
+                "Time Period:", 
+                list(time_filters.keys()), 
+                format_func=lambda x: time_filters[x], 
+                index=1
+            )
         
-        # Show summary if requested
-        if show_summary:
-            st.markdown("---")
-            show_movement_summary(history_params)
+        with filter_col3:
+            # Movement type filter
+            movement_types = ["all", "create", "move", "adjust"]
+            selected_movement_type = st.selectbox(
+                "Movement Type:",
+                movement_types,
+                format_func=lambda x: x.title() if x != "all" else "All Types"
+            )
+        
+        # Additional filters
+        additional_col1, additional_col2 = st.columns(2)
+        
+        with additional_col1:
+            user_filter = st.text_input("User Filter:", placeholder="Enter user ID")
+        
+        with additional_col2:
+            show_summary = st.checkbox("Show Summary Stats", value=True)
+    
+    # Calculate history parameters
+    history_params = {}
+    
+    if item_id_filter:
+        history_params['item_id'] = item_id_filter
+    
+    if selected_movement_type != "all":
+        history_params['movement_type'] = selected_movement_type
+    
+    if user_filter:
+        history_params['user_id'] = user_filter
+    
+    # Calculate date range based on time filter
+    if selected_time != "all":
+        now = datetime.now()
+        if selected_time == "today":
+            start_date = now.replace(hour=0, minute=0, second=0, microsecond=0)
+        elif selected_time == "week":
+            start_date = now - timedelta(days=7)
+        elif selected_time == "month":
+            start_date = now - timedelta(days=30)
+        elif selected_time == "quarter":
+            start_date = now - timedelta(days=90)
+        
+        history_params['start_date'] = start_date.isoformat()
+    
+    # Display movement history
+    create_movement_history_panel(item_id_filter)
+    
+    # Show summary if requested
+    if show_summary:
+        st.markdown("---")
+        show_movement_summary(history_params)
 
 
 def show_movement_summary(history_params: Dict[str, Any]):
@@ -320,9 +333,10 @@ def show_advanced_operations_interface():
     st.markdown("---")
     st.markdown("#### 🛠️ Additional Tools")
     
-    col1, col2 = st.columns(2)
+    # Create tools in horizontal layout
+    tools_col1, tools_col2 = st.columns(2)
     
-    with col1:
+    with tools_col1:
         st.markdown("**📋 Bulk Operations**")
         if st.button("🔄 Bulk Move Items", help="Move multiple items at once"):
             st.session_state.show_bulk_move_modal = True
@@ -332,7 +346,7 @@ def show_advanced_operations_interface():
             st.session_state.show_bulk_adjust_modal = True
             st.rerun()
     
-    with col2:
+    with tools_col2:
         st.markdown("**📤 Export Operations**")
         if st.button("📄 Export Movement History", help="Export movement history to CSV"):
             export_movement_history()
@@ -348,10 +362,8 @@ def show_movement_analytics_interface():
     
     api_client = APIClient()
     
-    # Time range selector
-    col1, col2 = st.columns([1, 3])
-    
-    with col1:
+    # Analysis period selection
+    with st.container():
         st.markdown("#### ⏱️ Analysis Period")
         
         analysis_periods = {
@@ -362,94 +374,100 @@ def show_movement_analytics_interface():
             "all": "All Time"
         }
         
-        selected_period = st.selectbox(
-            "Analysis Period:",
-            list(analysis_periods.keys()),
-            format_func=lambda x: analysis_periods[x],
-            index=1
-        )
+        period_col1, period_col2 = st.columns(2)
         
-        # Calculate date range
-        now = datetime.now()
-        if selected_period == "week":
-            start_date = now - timedelta(days=7)
-        elif selected_period == "month":
-            start_date = now - timedelta(days=30)
-        elif selected_period == "quarter":
-            start_date = now - timedelta(days=90)
-        elif selected_period == "year":
-            start_date = now - timedelta(days=365)
-        else:
-            start_date = None
+        with period_col1:
+            selected_period = st.selectbox(
+                "Analysis Period:",
+                list(analysis_periods.keys()),
+                format_func=lambda x: analysis_periods[x],
+                index=1
+            )
         
-        # Refresh analytics
-        if st.button("🔄 Refresh Analytics"):
-            if 'analytics_cache' in st.session_state:
-                del st.session_state.analytics_cache
-            st.rerun()
+        with period_col2:
+            # Refresh analytics
+            if st.button("🔄 Refresh Analytics"):
+                if 'analytics_cache' in st.session_state:
+                    del st.session_state.analytics_cache
+                st.rerun()
     
-    with col2:
-        # Get analytics data
-        analytics_params = {}
-        if start_date:
-            analytics_params['start_date'] = start_date.isoformat()
+    # Calculate date range
+    now = datetime.now()
+    if selected_period == "week":
+        start_date = now - timedelta(days=7)
+    elif selected_period == "month":
+        start_date = now - timedelta(days=30)
+    elif selected_period == "quarter":
+        start_date = now - timedelta(days=90)
+    elif selected_period == "year":
+        start_date = now - timedelta(days=365)
+    else:
+        start_date = None
+    
+    # Get analytics data
+    analytics_params = {}
+    if start_date:
+        analytics_params['start_date'] = start_date.isoformat()
+    
+    # Load movement history for analytics
+    movements = safe_api_call(
+        lambda: api_client.get_movement_history(limit=1000, **analytics_params),
+        "Failed to load movement data for analytics"
+    ) or []
+    
+    if movements:
+        # Movement trend analysis
+        st.markdown("#### 📊 Movement Trends")
         
-        # Load movement history for analytics
-        movements = safe_api_call(
-            lambda: api_client.get_movement_history(limit=1000, **analytics_params),
-            "Failed to load movement data for analytics"
-        ) or []
+        # Create movements dataframe
+        movements_df = pd.DataFrame([
+            {
+                "date": pd.to_datetime(m.get('created_at')).date(),
+                "type": m.get('movement_type', 'unknown'),
+                "quantity": m.get('quantity_moved', 0),
+                "item_id": m.get('item_id'),
+                "from_location": m.get('from_location', {}).get('name', '') if m.get('from_location') else '',
+                "to_location": m.get('to_location', {}).get('name', '') if m.get('to_location') else ''
+            }
+            for m in movements
+        ])
         
-        if movements:
-            # Movement trend analysis
-            st.markdown("#### 📊 Movement Trends")
+        if not movements_df.empty:
+            # Daily movement volume
+            daily_movements = movements_df.groupby('date').size().reset_index(name='count')
+            if len(daily_movements) > 1:
+                st.line_chart(daily_movements.set_index('date')['count'])
             
-            # Create movements dataframe
-            movements_df = pd.DataFrame([
-                {
-                    "date": pd.to_datetime(m.get('created_at')).date(),
-                    "type": m.get('movement_type', 'unknown'),
-                    "quantity": m.get('quantity_moved', 0),
-                    "item_id": m.get('item_id'),
-                    "from_location": m.get('from_location', {}).get('name', '') if m.get('from_location') else '',
-                    "to_location": m.get('to_location', {}).get('name', '') if m.get('to_location') else ''
-                }
-                for m in movements
-            ])
+            # Movement types distribution
+            st.markdown("#### 🏷️ Movement Types Distribution")
+            type_counts = movements_df['type'].value_counts()
+            st.bar_chart(type_counts)
             
-            if not movements_df.empty:
-                # Daily movement volume
-                daily_movements = movements_df.groupby('date').size().reset_index(name='count')
-                if len(daily_movements) > 1:
-                    st.line_chart(daily_movements.set_index('date')['count'])
+            # Most active locations
+            st.markdown("#### 📍 Most Active Locations")
+            
+            # Combine from and to locations
+            from_counts = movements_df[movements_df['from_location'] != '']['from_location'].value_counts()
+            to_counts = movements_df[movements_df['to_location'] != '']['to_location'].value_counts()
+            
+            # Combine and get top locations
+            all_locations = pd.concat([from_counts, to_counts]).groupby(level=0).sum().sort_values(ascending=False)
+            
+            if not all_locations.empty:
+                st.bar_chart(all_locations.head(10))
+            
+            # Movement insights
+            st.markdown("#### 💡 Movement Insights")
+            
+            # Display metrics in simple layout using containers
+            with st.container():
+                insights_col1, insights_col2, insights_col3 = st.columns(3)
                 
-                # Movement types distribution
-                st.markdown("#### 🏷️ Movement Types Distribution")
-                type_counts = movements_df['type'].value_counts()
-                st.bar_chart(type_counts)
-                
-                # Most active locations
-                st.markdown("#### 📍 Most Active Locations")
-                
-                # Combine from and to locations
-                from_counts = movements_df[movements_df['from_location'] != '']['from_location'].value_counts()
-                to_counts = movements_df[movements_df['to_location'] != '']['to_location'].value_counts()
-                
-                # Combine and get top locations
-                all_locations = pd.concat([from_counts, to_counts]).groupby(level=0).sum().sort_values(ascending=False)
-                
-                if not all_locations.empty:
-                    st.bar_chart(all_locations.head(10))
-                
-                # Movement insights
-                st.markdown("#### 💡 Movement Insights")
-                
-                # Use container to avoid nested columns
-                with st.container():
-                    # Display metrics in simple layout
+                with insights_col1:
                     avg_daily = len(movements) / max(1, (datetime.now().date() - movements_df['date'].min()).days)
                     st.metric("Avg Daily Movements", f"{avg_daily:.1f}")
-                    
+                
+                with insights_col2:
                     most_moved_item = movements_df['item_id'].value_counts().index[0] if not movements_df.empty else None
                     if most_moved_item:
                         # Get item name
@@ -459,12 +477,13 @@ def show_movement_analytics_interface():
                         except:
                             item_name = f"Item {most_moved_item}"
                         st.metric("Most Moved Item", item_name[:20] + "..." if len(item_name) > 20 else item_name)
-                    
+                
+                with insights_col3:
                     total_quantity = movements_df['quantity'].sum()
                     st.metric("Total Items Moved", total_quantity)
-        
-        else:
-            st.info("No movement data available for the selected period.")
+    
+    else:
+        st.info("No movement data available for the selected period.")
 
 
 def export_movement_history():
@@ -606,73 +625,84 @@ def show_system_health_monitoring():
     
     api_client = APIClient()
     
-    # Real-time health check
-    col1, col2 = st.columns([1, 3])
+    # Health check controls
+    with st.container():
+        health_col1, health_col2 = st.columns(2)
+        
+        with health_col1:
+            if st.button("🔄 Refresh Health Status", type="primary"):
+                with st.spinner("Checking system health..."):
+                    health_status = safe_api_call(
+                        lambda: api_client.health_check(),
+                        "Failed to check system health"
+                    )
+                    
+                    validation_report = safe_api_call(
+                        lambda: api_client.get_validation_report(),
+                        "Failed to get validation report"
+                    )
+                    
+                    if health_status:
+                        show_success("✅ Backend API is healthy")
+                    else:
+                        show_error("❌ Backend API health check failed")
+                    
+                    if validation_report:
+                        SessionManager.set('health_validation_report', validation_report)
+                        st.rerun()
+        
+        with health_col2:
+            # Current health status
+            validation_report = SessionManager.get('health_validation_report')
+            if validation_report:
+                api_status = "🟢 Online" if api_client.health_check() else "🔴 Offline"
+                st.metric("API Status", api_status)
     
-    with col1:
-        if st.button("🔄 Refresh Health Status", type="primary"):
-            with st.spinner("Checking system health..."):
-                health_status = safe_api_call(
-                    lambda: api_client.health_check(),
-                    "Failed to check system health"
-                )
-                
-                validation_report = safe_api_call(
-                    lambda: api_client.get_validation_report(),
-                    "Failed to get validation report"
-                )
-                
-                if health_status:
-                    show_success("✅ Backend API is healthy")
-                else:
-                    show_error("❌ Backend API health check failed")
-                
-                if validation_report:
-                    SessionManager.set('health_validation_report', validation_report)
-                    st.rerun()
-    
-    with col2:
-        # Display health metrics
-        validation_report = SessionManager.get('health_validation_report')
-        if validation_report:
-            system_health = validation_report.get('system_health', {})
+    # Display health metrics
+    validation_report = SessionManager.get('health_validation_report')
+    if validation_report:
+        system_health = validation_report.get('system_health', {})
+        
+        # System metrics section
+        st.markdown("**📊 System Metrics**")
+        
+        with st.container():
+            metrics_col1, metrics_col2, metrics_col3 = st.columns(3)
             
-            # Use container and single column layout to avoid nesting
-            with st.container():
-                st.markdown("**📊 System Metrics**")
-                
-                # Display metrics in a simple layout
+            with metrics_col1:
                 st.metric(
                     "Movements (24h)",
                     system_health.get('movements_last_24h', 0),
                     help="Total movements in the last 24 hours"
                 )
-                
+            
+            with metrics_col2:
                 st.metric(
                     "Active Rules",
                     system_health.get('validation_rules_active', 0),
                     help="Number of active business rules"
                 )
-                
-                api_status = "🟢 Online" if api_client.health_check() else "🔴 Offline"
-                st.metric("API Status", api_status)
             
-            # Business rules status
-            business_rules = validation_report.get('business_rules', {})
-            if business_rules:
-                st.markdown("**🔧 Business Rules Status:**")
-                
-                rules_data = []
-                for rule_name, rule_config in business_rules.items():
-                    rules_data.append({
-                        "Rule": rule_name.replace('_', ' ').title(),
-                        "Status": "✅ Enabled" if rule_config.get('enabled', False) else "❌ Disabled",
-                        "Description": rule_config.get('description', 'No description')
-                    })
-                
-                if rules_data:
-                    rules_df = pd.DataFrame(rules_data)
-                    st.dataframe(rules_df, use_container_width=True)
+            with metrics_col3:
+                total_movements = system_health.get('total_movements', 0)
+                st.metric("Total Movements", total_movements)
+        
+        # Business rules status
+        business_rules = validation_report.get('business_rules', {})
+        if business_rules:
+            st.markdown("**🔧 Business Rules Status:**")
+            
+            rules_data = []
+            for rule_name, rule_config in business_rules.items():
+                rules_data.append({
+                    "Rule": rule_name.replace('_', ' ').title(),
+                    "Status": "✅ Enabled" if rule_config.get('enabled', False) else "❌ Disabled",
+                    "Description": rule_config.get('description', 'No description')
+                })
+            
+            if rules_data:
+                rules_df = pd.DataFrame(rules_data)
+                st.dataframe(rules_df, use_container_width=True)
 
 
 def show_maintenance_tools():

@@ -29,16 +29,14 @@ def create_drag_drop_movement_interface(items: List[Dict], locations: List[Dict]
     st.markdown("### 🎯 Drag & Drop Item Movement")
     st.markdown("_Drag items between location containers to move them_")
     
-    # Create a visual board layout
-    col1, col2 = st.columns([2, 3])
+    # Create a visual board layout using containers instead of columns to avoid nesting
+    st.markdown("#### 📦 Items")
+    _render_items_panel(items)
     
-    with col1:
-        st.markdown("#### 📦 Items")
-        _render_items_panel(items)
+    st.markdown("---")
     
-    with col2:
-        st.markdown("#### 📍 Locations")
-        _render_locations_panel(locations, items)
+    st.markdown("#### 📍 Locations")
+    _render_locations_panel(locations, items)
 
 
 def _render_items_panel(items: List[Dict]) -> None:
@@ -185,29 +183,33 @@ def create_movement_history_panel(item_id: Optional[int] = None) -> None:
     
     api_client = APIClient()
     
-    # Filter controls
-    col1, col2, col3 = st.columns(3)
-    
-    with col1:
-        # Date range filter
-        days_back = st.selectbox(
-            "Show movements from:",
-            options=[7, 30, 90, 365, 0],
-            format_func=lambda x: f"Last {x} days" if x > 0 else "All time",
-            index=1  # Default to 30 days
-        )
-    
-    with col2:
-        # Movement type filter
-        movement_type = st.selectbox(
-            "Movement type:",
-            options=["all", "move", "adjust", "create"],
-            format_func=lambda x: x.title() if x != "all" else "All Types"
-        )
-    
-    with col3:
-        # User filter (if available)
-        user_filter = st.text_input("User:", placeholder="Filter by user ID")
+    # Filter controls in a simple layout to avoid column nesting
+    with st.container():
+        st.markdown("**📋 History Filters**")
+        
+        # Create filter row
+        filter_col1, filter_col2, filter_col3 = st.columns(3)
+        
+        with filter_col1:
+            # Date range filter
+            days_back = st.selectbox(
+                "Show movements from:",
+                options=[7, 30, 90, 365, 0],
+                format_func=lambda x: f"Last {x} days" if x > 0 else "All time",
+                index=1  # Default to 30 days
+            )
+        
+        with filter_col2:
+            # Movement type filter
+            movement_type = st.selectbox(
+                "Movement type:",
+                options=["all", "move", "adjust", "create"],
+                format_func=lambda x: x.title() if x != "all" else "All Types"
+            )
+        
+        with filter_col3:
+            # User filter (if available)
+            user_filter = st.text_input("User:", placeholder="Filter by user ID")
     
     # Fetch movement history
     history_params = {
