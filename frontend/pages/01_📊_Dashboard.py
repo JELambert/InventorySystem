@@ -17,6 +17,10 @@ from utils.helpers import (
     safe_currency_format, safe_float_format, safe_int_convert
 )
 from utils.config import AppConfig
+from utils.performance import (
+    SessionStateOptimizer, LazyLoader, performance_monitor,
+    create_performance_dashboard, optimize_session_state
+)
 from components.keyboard_shortcuts import (
     enable_keyboard_shortcuts, show_keyboard_shortcuts_help,
     create_action_buttons_row
@@ -31,8 +35,9 @@ st.set_page_config(
     layout="wide"
 )
 
+@performance_monitor
 def load_dashboard_data() -> Dict[str, Any]:
-    """Load data for the dashboard."""
+    """Load data for the dashboard with caching."""
     if 'api_client' not in st.session_state:
         st.session_state.api_client = APIClient()
     
@@ -43,46 +48,73 @@ def load_dashboard_data() -> Dict[str, Any]:
         show_error("Cannot connect to the API. Please check if the backend is running.")
         return {}
     
-    # Load statistics
-    stats = safe_api_call(
-        lambda: api_client.get_location_stats(),
-        "Failed to load location statistics"
+    # Use optimized cached loading
+    def load_stats():
+        return api_client.get_location_stats()
+    
+    def load_inventory_summary():
+        return api_client.get_inventory_summary()
+    
+    def load_performance_metrics():
+        try:
+            return api_client.get_performance_metrics()
+        except:
+            return None
+    
+    # Load statistics with caching
+    stats = SessionStateOptimizer.get_or_compute(
+        "dashboard_location_stats",
+        load_stats,
+        ttl_seconds=300  # Cache for 5 minutes
     )
     
-    # Load recent locations (first 10)
-    locations = safe_api_call(
+    # Load recent locations (cached)
+    locations = SessionStateOptimizer.get_or_compute(
+        "dashboard_recent_locations",
         lambda: api_client.get_locations(skip=0, limit=10),
-        "Failed to load recent locations"
+        ttl_seconds=600  # Cache for 10 minutes
     )
     
-    # Load category statistics
-    category_stats = safe_api_call(
+    # Load category statistics (cached)
+    category_stats = SessionStateOptimizer.get_or_compute(
+        "dashboard_category_stats",
         lambda: api_client.get_category_stats(),
-        "Failed to load category statistics"
+        ttl_seconds=300  # Cache for 5 minutes
     )
     
-    # Load categories for analytics
-    categories_data = safe_api_call(
+    # Load categories for analytics (cached)
+    categories_data = SessionStateOptimizer.get_or_compute(
+        "dashboard_categories_data",
         lambda: api_client.get_categories(page=1, per_page=100, include_inactive=True),
-        "Failed to load categories"
+        ttl_seconds=900  # Cache for 15 minutes
     )
     
-    # Load item statistics
-    item_stats = safe_api_call(
+    # Load item statistics (cached)
+    item_stats = SessionStateOptimizer.get_or_compute(
+        "dashboard_item_stats",
         lambda: api_client.get_item_statistics(),
-        "Failed to load item statistics"
+        ttl_seconds=300  # Cache for 5 minutes
     )
     
-    # Load inventory summary
-    inventory_summary = safe_api_call(
-        lambda: api_client.get_inventory_summary(),
-        "Failed to load inventory summary"
+    # Load inventory summary (cached)
+    inventory_summary = SessionStateOptimizer.get_or_compute(
+        "dashboard_inventory_summary",
+        load_inventory_summary,
+        ttl_seconds=300  # Cache for 5 minutes
     )
     
-    # Load recent items (first 10)
-    recent_items = safe_api_call(
+    # Load recent items (cached)
+    recent_items = SessionStateOptimizer.get_or_compute(
+        "dashboard_recent_items",
         lambda: api_client.get_items(skip=0, limit=10),
-        "Failed to load recent items"
+        ttl_seconds=600  # Cache for 10 minutes
+    )
+    
+    # Load performance metrics (cached, optional)
+    performance_metrics = SessionStateOptimizer.get_or_compute(
+        "dashboard_performance_metrics",
+        load_performance_metrics,
+        ttl_seconds=60  # Cache for 1 minute
     )
     
     return {
@@ -92,7 +124,8 @@ def load_dashboard_data() -> Dict[str, Any]:
         'categories': categories_data.get('categories', []) if categories_data else [],
         'item_stats': item_stats or {},
         'inventory_summary': inventory_summary or {},
-        'recent_items': recent_items or []
+        'recent_items': recent_items or [],
+        'performance_metrics': performance_metrics
     }
 
 def create_stats_metrics(stats: Dict[str, Any]):
@@ -602,9 +635,25 @@ def main():
     item_stats = data.get('item_stats', {})
     inventory_summary = data.get('inventory_summary', {})
     recent_items = data.get('recent_items', [])
+    performance_metrics = data.get('performance_metrics')
     
-    # Metrics section
-    st.subheader("📈 System Overview")
+    # Add performance controls
+    col1, col2, col3 = st.columns([3, 1, 1])
+    
+    with col1:
+        st.subheader("📈 System Overview")
+    
+    with col2:
+        if st.button("🗑️ Clear Cache"):
+            SessionStateOptimizer.invalidate_cache("dashboard_")
+            st.success("Dashboard cache cleared!")
+            st.rerun()
+    
+    with col3:
+        if st.button("🔧 Optimize"):
+            optimize_session_state()
+            st.success("Session optimized!")
+            st.rerun()
     
     # Create tabs for different metric types
     metric_tabs = st.tabs(["📍 Locations", "📦 Items", "🏷️ Categories"])
@@ -626,7 +675,8 @@ def main():
         "📍 Locations", 
         "📦 Items",
         "🏷️ Categories", 
-        "📊 Combined Analytics"
+        "📊 Combined Analytics",
+        "🚀 Performance"
     ])
     
     with main_tabs[0]:
@@ -689,6 +739,65 @@ def main():
                     f"{utilization_rate}%",
                     help="Percentage of locations with assigned categories"
                 )
+    
+    with main_tabs[4]:
+        st.subheader("🚀 Performance Metrics")
+        
+        # Show cache statistics
+        cache_stats = SessionStateOptimizer.get_cache_stats()
+        perf_col1, perf_col2, perf_col3, perf_col4 = st.columns(4)
+        
+        with perf_col1:
+            st.metric("🗃️ Cache Entries", cache_stats["total_cache_entries"])
+        with perf_col2:
+            st.metric("✅ Active Entries", cache_stats["active_entries"])
+        with perf_col3:
+            st.metric("⏰ Expired Entries", cache_stats["expired_entries"])
+        with perf_col4:
+            st.metric("🔑 Session Keys", len(st.session_state.keys()))
+        
+        # Performance dashboard
+        if st.button("📊 Show Detailed Performance"):
+            create_performance_dashboard()
+        
+        # Backend performance metrics
+        if performance_metrics:
+            st.markdown("### 🔧 Backend Performance")
+            with st.expander("Backend Metrics", expanded=False):
+                st.json(performance_metrics)
+        
+        # Cache management buttons
+        perf_actions_col1, perf_actions_col2, perf_actions_col3 = st.columns(3)
+        
+        with perf_actions_col1:
+            if st.button("🔄 Warm Cache"):
+                try:
+                    api_client = st.session_state.api_client
+                    result = api_client.warm_cache()
+                    st.success("Cache warmed successfully!")
+                    st.json(result)
+                except Exception as e:
+                    st.error(f"Failed to warm cache: {e}")
+        
+        with perf_actions_col2:
+            if st.button("📈 Create Indexes"):
+                try:
+                    api_client = st.session_state.api_client
+                    result = api_client.create_performance_indexes()
+                    st.success("Performance indexes created!")
+                    st.json(result)
+                except Exception as e:
+                    st.error(f"Failed to create indexes: {e}")
+        
+        with perf_actions_col3:
+            if st.button("🧹 Clear Backend Cache"):
+                try:
+                    api_client = st.session_state.api_client
+                    result = api_client.clear_cache()
+                    st.success("Backend cache cleared!")
+                    st.json(result)
+                except Exception as e:
+                    st.error(f"Failed to clear backend cache: {e}")
     
     st.markdown("---")
     
