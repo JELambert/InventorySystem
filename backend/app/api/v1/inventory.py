@@ -12,6 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database.base import get_session
 from app.services.inventory_service import InventoryService
+from app.services.movement_validator import MovementValidator, ValidationError
 from app.schemas.inventory import (
     InventoryCreate, InventoryUpdate, InventoryResponse, InventoryWithDetails,
     InventorySearch, InventoryMove, InventorySummary, InventoryBulkOperation,
@@ -21,7 +22,7 @@ from app.schemas.item import ItemSummary
 from app.schemas.location import LocationSummary
 from app.schemas.movement_history import (
     MovementHistorySearch, MovementHistoryWithDetails, MovementHistorySummary,
-    ItemMovementTimeline
+    ItemMovementTimeline, MovementHistoryCreate
 )
 from app.services.movement_service import MovementService
 
@@ -36,6 +37,11 @@ def get_inventory_service(db: AsyncSession = Depends(get_session)) -> InventoryS
 def get_movement_service(db: AsyncSession = Depends(get_session)) -> MovementService:
     """Dependency to get movement service."""
     return MovementService(db)
+
+
+def get_movement_validator(db: AsyncSession = Depends(get_session)) -> MovementValidator:
+    """Dependency to get movement validator."""
+    return MovementValidator(db)
 
 
 # Specific paths first, then parameterized paths
@@ -142,21 +148,66 @@ async def create_inventory_entry(
 async def move_item(
     item_id: int,
     move_data: InventoryMove,
-    service: InventoryService = Depends(get_inventory_service)
+    service: InventoryService = Depends(get_inventory_service),
+    validator: MovementValidator = Depends(get_movement_validator),
+    movement_service: MovementService = Depends(get_movement_service)
 ):
     """
-    Move items between locations.
+    Move items between locations with comprehensive validation.
     
     - **from_location_id**: Source location ID
     - **to_location_id**: Destination location ID  
     - **quantity**: Quantity to move
     
+    Includes business rule validation and automatic movement history tracking.
     If moving all items from a location, the source inventory entry will be deleted.
     If the destination already has the item, quantities will be combined.
     """
     try:
+        # Create movement data for validation
+        movement_data = MovementHistoryCreate(
+            item_id=item_id,
+            from_location_id=move_data.from_location_id,
+            to_location_id=move_data.to_location_id,
+            quantity_moved=move_data.quantity,
+            movement_type="move",
+            reason=move_data.reason,
+            user_id=getattr(move_data, 'user_id', None)
+        )
+        
+        # Validate the movement
+        validation_result = await validator.validate_movement_create(movement_data)
+        
+        if not validation_result.is_valid:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail={
+                    "message": "Movement validation failed",
+                    "errors": validation_result.errors,
+                    "warnings": validation_result.warnings,
+                    "business_rules_checked": validation_result.business_rules_applied
+                }
+            )
+        
+        # If there are warnings but validation passed, log them
+        if validation_result.warnings:
+            # In a real system, you might want to log these warnings
+            pass
+        
+        # Perform the move
         inventory_entry = await service.move_item(item_id, move_data)
+        
         return InventoryResponse.model_validate(inventory_entry)
+        
+    except ValidationError as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail={
+                "message": e.message,
+                "error_code": e.error_code,
+                "details": e.details
+            }
+        )
     except ValueError as e:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -422,15 +473,39 @@ async def split_item_quantity(
     item_id: int,
     split_data: dict,  # {source_location_id, dest_location_id, quantity_to_move, reason?}
     user_id: Optional[str] = Query(None, description="User performing the operation"),
-    service: InventoryService = Depends(get_inventory_service)
+    service: InventoryService = Depends(get_inventory_service),
+    validator: MovementValidator = Depends(get_movement_validator)
 ):
     """
-    Split item quantity between two locations.
+    Split item quantity between two locations with validation.
     
     Moves specified quantity from source location to destination location,
     maintaining accurate quantity tracking at both locations.
+    Includes comprehensive business rule validation.
     """
     try:
+        # Validate split operation
+        movement_data = MovementHistoryCreate(
+            item_id=item_id,
+            from_location_id=split_data["source_location_id"],
+            to_location_id=split_data["dest_location_id"],
+            quantity_moved=split_data["quantity_to_move"],
+            movement_type="split",
+            reason=split_data.get("reason"),
+            user_id=user_id
+        )
+        
+        validation_result = await validator.validate_movement_create(movement_data)
+        if not validation_result.is_valid:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail={
+                    "message": "Split operation validation failed",
+                    "errors": validation_result.errors,
+                    "warnings": validation_result.warnings
+                }
+            )
+        
         source_entry, dest_entry = await service.split_item_quantity(
             item_id=item_id,
             source_location_id=split_data["source_location_id"],
@@ -538,4 +613,135 @@ async def adjust_item_quantity(
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=str(e)
+        )
+
+
+# Movement Validation Endpoints
+
+@router.post("/validate/movement", response_model=None)
+async def validate_movement_operation(
+    movement_data: MovementHistoryCreate,
+    enforce_strict: bool = Query(True, description="Enforce strict business rule validation"),
+    validator: MovementValidator = Depends(get_movement_validator)
+):
+    """
+    Validate a movement operation without executing it.
+    
+    Returns validation result with errors, warnings, and business rules applied.
+    Useful for pre-validation in UI before attempting actual movement.
+    """
+    try:
+        validation_result = await validator.validate_movement_create(
+            movement_data, 
+            enforce_strict_validation=enforce_strict
+        )
+        
+        return {
+            "is_valid": validation_result.is_valid,
+            "errors": validation_result.errors,
+            "warnings": validation_result.warnings,
+            "business_rules_applied": validation_result.business_rules_applied,
+            "validation_metadata": validation_result.validation_metadata
+        }
+        
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Validation system error: {str(e)}"
+        )
+
+
+@router.post("/validate/bulk-movement", response_model=None)
+async def validate_bulk_movement_operation(
+    movements: List[MovementHistoryCreate],
+    enforce_atomic: bool = Query(True, description="All movements must pass validation"),
+    validator: MovementValidator = Depends(get_movement_validator)
+):
+    """
+    Validate multiple movement operations as a batch.
+    
+    Returns overall validation result plus individual results for each movement.
+    Includes cross-movement conflict detection.
+    """
+    try:
+        overall_result, individual_results = await validator.validate_bulk_movement(
+            movements, 
+            enforce_atomic_validation=enforce_atomic
+        )
+        
+        return {
+            "overall_result": {
+                "is_valid": overall_result.is_valid,
+                "errors": overall_result.errors,
+                "warnings": overall_result.warnings,
+                "business_rules_applied": overall_result.business_rules_applied
+            },
+            "individual_results": [
+                {
+                    "movement_index": i,
+                    "is_valid": result.is_valid,
+                    "errors": result.errors,
+                    "warnings": result.warnings,
+                    "business_rules_applied": result.business_rules_applied
+                }
+                for i, result in enumerate(individual_results)
+            ],
+            "total_movements": len(movements),
+            "valid_movements": sum(1 for r in individual_results if r.is_valid),
+            "failed_movements": sum(1 for r in individual_results if not r.is_valid)
+        }
+        
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Bulk validation system error: {str(e)}"
+        )
+
+
+@router.get("/validation/report", response_model=None)
+async def get_validation_report(
+    item_id: Optional[int] = Query(None, description="Filter report by specific item"),
+    validator: MovementValidator = Depends(get_movement_validator)
+):
+    """
+    Get comprehensive validation system report.
+    
+    Includes business rules configuration, validation statistics,
+    recent failures, and system health metrics.
+    """
+    try:
+        report = await validator.get_validation_report(item_id)
+        return report
+        
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to generate validation report: {str(e)}"
+        )
+
+
+@router.post("/validation/rules/override", response_model=None)
+async def apply_business_rule_overrides(
+    overrides: dict,  # {rule_name: {enabled: bool, ...other_config}}
+    validator: MovementValidator = Depends(get_movement_validator)
+):
+    """
+    Apply temporary business rule overrides.
+    
+    Allows runtime modification of business rules for special cases.
+    Overrides are not persistent and will reset on service restart.
+    """
+    try:
+        await validator.apply_business_rule_overrides(overrides)
+        
+        return {
+            "message": "Business rule overrides applied successfully",
+            "overrides_applied": overrides,
+            "active_rules": validator.business_rules
+        }
+        
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to apply business rule overrides: {str(e)}"
         )

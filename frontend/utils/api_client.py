@@ -626,3 +626,69 @@ class APIClient:
             "timeout": self.timeout,
             "is_connected": self.health_check()
         }
+    
+    # Movement Validation Methods
+    
+    def validate_movement(
+        self, 
+        movement_data: Dict[str, Any], 
+        enforce_strict: bool = True
+    ) -> dict:
+        """
+        Validate a movement operation without executing it.
+        
+        Args:
+            movement_data: Movement data to validate
+            enforce_strict: Whether to enforce strict business rule validation
+            
+        Returns:
+            Validation result with errors, warnings, and business rules applied
+        """
+        params = {"enforce_strict": enforce_strict}
+        return self._make_request("POST", "inventory/validate/movement", data=movement_data, params=params)
+    
+    def validate_bulk_movement(
+        self, 
+        movements: List[Dict[str, Any]], 
+        enforce_atomic: bool = True
+    ) -> dict:
+        """
+        Validate multiple movement operations as a batch.
+        
+        Args:
+            movements: List of movements to validate
+            enforce_atomic: Whether all movements must pass validation
+            
+        Returns:
+            Overall validation result plus individual results for each movement
+        """
+        params = {"enforce_atomic": enforce_atomic}
+        return self._make_request("POST", "inventory/validate/bulk-movement", data=movements, params=params)
+    
+    def get_validation_report(self, item_id: Optional[int] = None) -> dict:
+        """
+        Get comprehensive validation system report.
+        
+        Args:
+            item_id: Optional filter by specific item
+            
+        Returns:
+            Validation system report with business rules, statistics, and health metrics
+        """
+        params = {}
+        if item_id:
+            params["item_id"] = item_id
+        
+        return self._make_request("GET", "inventory/validation/report", params=params)
+    
+    def apply_business_rule_overrides(self, overrides: Dict[str, Any]) -> dict:
+        """
+        Apply temporary business rule overrides.
+        
+        Args:
+            overrides: Dictionary of rule overrides
+            
+        Returns:
+            Result of applying overrides with active rules
+        """
+        return self._make_request("POST", "inventory/validation/rules/override", data=overrides)

@@ -23,6 +23,12 @@ from components.item_movement import (
     create_advanced_quantity_operations_panel,
     show_movement_modals
 )
+from components.movement_validation import (
+    create_movement_validation_widget,
+    create_bulk_validation_widget,
+    show_validation_report_widget,
+    create_business_rules_override_widget
+)
 from components.keyboard_shortcuts import (
     enable_keyboard_shortcuts, show_keyboard_shortcuts_help
 )
@@ -51,11 +57,13 @@ def show_movement_page():
     enable_keyboard_shortcuts()
     
     # Create tabs for different movement features
-    tab1, tab2, tab3, tab4 = st.tabs([
+    tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs([
         "🎯 Drag & Drop Movement", 
         "📊 Movement History", 
         "⚙️ Advanced Operations",
-        "📈 Movement Analytics"
+        "📈 Movement Analytics",
+        "🔍 Validation",
+        "⚙️ Admin"
     ])
     
     with tab1:
@@ -69,6 +77,12 @@ def show_movement_page():
     
     with tab4:
         show_movement_analytics_interface()
+    
+    with tab5:
+        show_validation_interface()
+    
+    with tab6:
+        show_admin_interface()
     
     # Display movement modals
     show_movement_modals()
@@ -546,6 +560,236 @@ def export_inventory_report():
             show_success("Inventory report ready for download!")
         else:
             show_error("No inventory data to export.")
+
+
+def show_validation_interface():
+    """Display the validation interface."""
+    st.markdown("### 🔍 Movement Validation & Testing")
+    st.markdown("_Validate movements before execution and test business rules_")
+    
+    validation_tabs = st.tabs(["🔍 Single Movement", "📦 Bulk Validation", "📊 Validation Report"])
+    
+    with validation_tabs[0]:
+        # Single movement validation
+        create_movement_validation_widget()
+    
+    with validation_tabs[1]:
+        # Bulk movement validation
+        create_bulk_validation_widget()
+    
+    with validation_tabs[2]:
+        # Validation system report
+        show_validation_report_widget()
+
+
+def show_admin_interface():
+    """Display the admin interface for movement system management."""
+    st.markdown("### ⚙️ Movement System Administration")
+    st.markdown("_Administrative tools for movement system configuration and monitoring_")
+    
+    admin_tabs = st.tabs(["🔧 Business Rules", "📊 System Health", "🔄 Maintenance"])
+    
+    with admin_tabs[0]:
+        # Business rules management
+        create_business_rules_override_widget()
+    
+    with admin_tabs[1]:
+        # System health monitoring
+        show_system_health_monitoring()
+    
+    with admin_tabs[2]:
+        # Maintenance tools
+        show_maintenance_tools()
+
+
+def show_system_health_monitoring():
+    """Display system health monitoring dashboard."""
+    st.markdown("#### 🏥 System Health Monitoring")
+    
+    api_client = APIClient()
+    
+    # Real-time health check
+    col1, col2 = st.columns([1, 3])
+    
+    with col1:
+        if st.button("🔄 Refresh Health Status", type="primary"):
+            with st.spinner("Checking system health..."):
+                health_status = safe_api_call(
+                    lambda: api_client.health_check(),
+                    "Failed to check system health"
+                )
+                
+                validation_report = safe_api_call(
+                    lambda: api_client.get_validation_report(),
+                    "Failed to get validation report"
+                )
+                
+                if health_status:
+                    show_success("✅ Backend API is healthy")
+                else:
+                    show_error("❌ Backend API health check failed")
+                
+                if validation_report:
+                    SessionManager.set('health_validation_report', validation_report)
+                    st.rerun()
+    
+    with col2:
+        # Display health metrics
+        validation_report = SessionManager.get('health_validation_report')
+        if validation_report:
+            system_health = validation_report.get('system_health', {})
+            
+            col1_metrics, col2_metrics, col3_metrics = st.columns(3)
+            
+            with col1_metrics:
+                st.metric(
+                    "Movements (24h)",
+                    system_health.get('movements_last_24h', 0),
+                    help="Total movements in the last 24 hours"
+                )
+            
+            with col2_metrics:
+                st.metric(
+                    "Active Rules",
+                    system_health.get('validation_rules_active', 0),
+                    help="Number of active business rules"
+                )
+            
+            with col3_metrics:
+                api_status = "🟢 Online" if api_client.health_check() else "🔴 Offline"
+                st.metric("API Status", api_status)
+            
+            # Business rules status
+            business_rules = validation_report.get('business_rules', {})
+            if business_rules:
+                st.markdown("**🔧 Business Rules Status:**")
+                
+                rules_data = []
+                for rule_name, rule_config in business_rules.items():
+                    rules_data.append({
+                        "Rule": rule_name.replace('_', ' ').title(),
+                        "Status": "✅ Enabled" if rule_config.get('enabled', False) else "❌ Disabled",
+                        "Description": rule_config.get('description', 'No description')
+                    })
+                
+                if rules_data:
+                    rules_df = pd.DataFrame(rules_data)
+                    st.dataframe(rules_df, use_container_width=True)
+
+
+def show_maintenance_tools():
+    """Display maintenance and troubleshooting tools."""
+    st.markdown("#### 🔄 Maintenance & Troubleshooting")
+    
+    api_client = APIClient()
+    
+    # API connection testing
+    st.markdown("**🔌 API Connection Testing**")
+    
+    col1, col2 = st.columns(2)
+    
+    with col1:
+        if st.button("🏥 Test Health Endpoint"):
+            with st.spinner("Testing health endpoint..."):
+                health_result = safe_api_call(
+                    lambda: api_client.health_check(),
+                    "Health endpoint test failed"
+                )
+                
+                if health_result:
+                    show_success("Health endpoint is responding correctly")
+                else:
+                    show_error("Health endpoint is not responding")
+    
+    with col2:
+        if st.button("📊 Test Validation Endpoint"):
+            with st.spinner("Testing validation endpoint..."):
+                # Test with a simple movement
+                test_movement = {
+                    "item_id": 1,
+                    "movement_type": "move",
+                    "from_location_id": 1,
+                    "to_location_id": 2,
+                    "quantity_moved": 1,
+                    "reason": "Maintenance test"
+                }
+                
+                validation_result = safe_api_call(
+                    lambda: api_client.validate_movement(test_movement, enforce_strict=False),
+                    "Validation endpoint test failed"
+                )
+                
+                if validation_result:
+                    show_success("Validation endpoint is responding correctly")
+                    with st.expander("📋 Test Result"):
+                        st.json(validation_result)
+                else:
+                    show_error("Validation endpoint is not responding")
+    
+    # Cache management
+    st.markdown("---")
+    st.markdown("**🗃️ Cache Management**")
+    
+    col1, col2, col3 = st.columns(3)
+    
+    with col1:
+        if st.button("🗑️ Clear Movement Cache"):
+            # Clear movement-related session state
+            keys_to_clear = [key for key in st.session_state.keys() if 'movement' in key.lower()]
+            for key in keys_to_clear:
+                del st.session_state[key]
+            show_success(f"Cleared {len(keys_to_clear)} movement cache entries")
+    
+    with col2:
+        if st.button("🗑️ Clear Validation Cache"):
+            # Clear validation-related session state
+            keys_to_clear = [key for key in st.session_state.keys() if 'validation' in key.lower()]
+            for key in keys_to_clear:
+                del st.session_state[key]
+            show_success(f"Cleared {len(keys_to_clear)} validation cache entries")
+    
+    with col3:
+        if st.button("🗑️ Clear All Cache"):
+            # Clear all session state
+            session_keys = list(st.session_state.keys())
+            st.session_state.clear()
+            show_success(f"Cleared all {len(session_keys)} cache entries")
+    
+    # System information
+    st.markdown("---")
+    st.markdown("**ℹ️ System Information**")
+    
+    if st.button("📋 Show Connection Info"):
+        connection_info = api_client.get_connection_info()
+        
+        with st.expander("🔗 Connection Details", expanded=True):
+            col1, col2 = st.columns(2)
+            
+            with col1:
+                st.markdown(f"**Base URL:** {connection_info['base_url']}")
+                st.markdown(f"**Timeout:** {connection_info['timeout']} seconds")
+            
+            with col2:
+                connection_status = "🟢 Connected" if connection_info['is_connected'] else "🔴 Disconnected"
+                st.markdown(f"**Status:** {connection_status}")
+                st.markdown(f"**Timestamp:** {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+        
+        # Additional diagnostics
+        with st.expander("🔍 Diagnostic Information"):
+            st.markdown("**Session State Keys:**")
+            session_keys = list(st.session_state.keys())
+            if session_keys:
+                for key in sorted(session_keys):
+                    st.markdown(f"- {key}")
+            else:
+                st.markdown("_No session state data_")
+            
+            st.markdown("**API Client Configuration:**")
+            st.json({
+                "base_url": api_client.base_url,
+                "timeout": api_client.timeout,
+                "session_configured": api_client.session is not None
+            })
 
 
 # Main execution
