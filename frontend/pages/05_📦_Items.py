@@ -144,6 +144,38 @@ def create_search_filters() -> Dict[str, Any]:
         )
         selected_category_ids = [id for name, id in category_options if name in selected_categories]
     
+    # Location filter (load from API)
+    locations_data = safe_api_call(
+        lambda: api_client.get_locations(skip=0, limit=1000),
+        error_message="Failed to load locations for filtering"
+    )
+    
+    location_options = []
+    if locations_data:
+        location_options = [(loc['name'], loc['id']) for loc in locations_data]
+    
+    selected_location_ids = []
+    if location_options:
+        selected_locations = st.multiselect(
+            "Locations",
+            options=[name for name, _ in location_options],
+            help="Filter by location where items are stored"
+        )
+        selected_location_ids = [id for name, id in location_options if name in selected_locations]
+    
+    # Special location filters
+    col1, col2 = st.columns(2)
+    with col1:
+        show_unassigned = st.checkbox(
+            "Items without location",
+            help="Show items that are not assigned to any location"
+        )
+    with col2:
+        show_multiple_locations = st.checkbox(
+            "Items in multiple locations",
+            help="Show items that are stored in multiple locations"
+        )
+    
     # Value range filter
     with st.expander("💰 Value Range"):
         col1, col2 = st.columns(2)
@@ -191,6 +223,9 @@ def create_search_filters() -> Dict[str, Any]:
         "conditions": selected_conditions,
         "statuses": selected_statuses,
         "category_ids": selected_category_ids,
+        "location_ids": selected_location_ids,
+        "show_unassigned": show_unassigned,
+        "show_multiple_locations": show_multiple_locations,
         "min_value": min_value if min_value > 0 else None,
         "max_value": max_value if max_value < 10000 else None,
         "start_date": start_date,
@@ -305,31 +340,60 @@ def display_item_details(item: Dict):
     
     # Inventory information
     st.subheader("📍 Location Information")
-    api_client = APIClient()
     
-    # Get item locations  
-    item_locations = safe_api_call(
-        lambda: api_client.get_item_locations(item.get("id")),
-        "Failed to load item locations"
-    )
+    # Use inventory data from item if available, otherwise make API call
+    inventory_entries = item.get("inventory_entries", [])
     
-    if item_locations:
+    if not inventory_entries:
+        # Fallback to API call if inventory data not included
+        api_client = APIClient()
+        inventory_entries = safe_api_call(
+            lambda: api_client.get_inventory(item_id=item.get("id")),
+            "Failed to load item inventory"
+        ) or []
+    
+    if inventory_entries:
         location_df_data = []
-        for entry in item_locations:
+        total_quantity = 0
+        
+        for entry in inventory_entries:
+            quantity = entry.get("quantity", 1)
+            total_quantity += quantity
+            
+            location_name = "Unknown Location"
+            if entry.get("location"):
+                location_name = entry["location"].get("name", "Unknown Location")
+            elif entry.get("location_id"):
+                # Try to get location name if only ID is available
+                try:
+                    api_client = APIClient()
+                    location = api_client.get_location(entry["location_id"])
+                    location_name = location.get("name", f"Location {entry['location_id']}")
+                except:
+                    location_name = f"Location {entry['location_id']}"
+            
             location_df_data.append({
-                "Location": entry.get("location", {}).get("name", "Unknown"),
-                "Quantity": entry.get("quantity", 1),
+                "Location": location_name,
+                "Quantity": quantity,
                 "Last Updated": entry.get("updated_at", "").split("T")[0] if entry.get("updated_at") else "",
                 "Total Value": safe_currency_format(entry.get('total_value')) if entry.get('total_value') else ""
             })
         
         if location_df_data:
+            # Show summary
+            col1, col2 = st.columns(2)
+            with col1:
+                st.metric("Total Quantity", total_quantity)
+            with col2:
+                st.metric("Locations", len(inventory_entries))
+            
+            # Show detailed table
             location_df = pd.DataFrame(location_df_data)
             st.dataframe(location_df, use_container_width=True)
         else:
             st.info("This item is not currently in any location inventory.")
     else:
-        st.info("No location information available.")
+        st.info("No location information available for this item.")
 
 def show_items_page():
     """Main items page display."""
@@ -414,7 +478,7 @@ def show_items_page():
                     query_params["category_id"] = filters["category_ids"][0]  # API supports single category
                 
                 items_data = safe_api_call(
-                    lambda: api_client.get_items(**query_params),
+                    lambda: api_client.get_items_with_inventory(**query_params),
                     error_message="Failed to load items data"
                 )
                 
@@ -450,6 +514,22 @@ def show_items_page():
         if filters["tags"]:
             filtered_items = [item for item in filtered_items 
                             if any(tag.lower() in (item.get("tags", "")).lower() for tag in filters["tags"])]
+        
+        # Filter by location-based criteria
+        if filters["location_ids"]:
+            filtered_items = [item for item in filtered_items 
+                            if any(entry.get('location_id') in filters["location_ids"] 
+                                  for entry in item.get('inventory_entries', []))]
+        
+        # Filter items without location assignments
+        if filters["show_unassigned"]:
+            filtered_items = [item for item in filtered_items 
+                            if not item.get('inventory_entries', [])]
+        
+        # Filter items in multiple locations
+        if filters["show_multiple_locations"]:
+            filtered_items = [item for item in filtered_items 
+                            if len(item.get('inventory_entries', [])) > 1]
         
         # Display results
         st.markdown(f"**Found {len(filtered_items)} items**")
@@ -511,6 +591,19 @@ def show_items_page():
                                     st.subheader(item.get("name", "Unknown"))
                                     st.write(f"**Type:** {item.get('item_type', '').replace('_', ' ').title()}")
                                     st.write(f"**Status:** {item.get('status', '').replace('_', ' ').title()}")
+                                    
+                                    # Show inventory information
+                                    inventory_entries = item.get("inventory_entries", [])
+                                    if inventory_entries:
+                                        total_qty = sum(entry.get('quantity', 1) for entry in inventory_entries)
+                                        if len(inventory_entries) == 1:
+                                            location_name = inventory_entries[0].get('location', {}).get('name', 'Unknown')
+                                            st.write(f"**Location:** {location_name} (Qty: {total_qty})")
+                                        else:
+                                            st.write(f"**Locations:** {len(inventory_entries)} locations (Total: {total_qty})")
+                                    else:
+                                        st.write("**Location:** Not assigned")
+                                    
                                     if item.get("current_value"):
                                         st.write(f"**Value:** {safe_currency_format(item['current_value'])}")
                                     
@@ -557,6 +650,34 @@ def show_modals():
                 if 'selected_item' in st.session_state:
                     del st.session_state.selected_item
                 st.rerun()
+    
+    # Inventory management modals
+    if st.session_state.get('show_move_form', False) and st.session_state.get('selected_items'):
+        with st.expander("📍 Move Items", expanded=True):
+            show_move_items_form()
+            if st.button("Cancel Move"):
+                st.session_state.show_move_form = False
+                if 'selected_items' in st.session_state:
+                    del st.session_state.selected_items
+                st.rerun()
+    
+    if st.session_state.get('show_assign_location_form', False) and st.session_state.get('selected_items'):
+        with st.expander("📍 Assign Location", expanded=True):
+            show_assign_location_form()
+            if st.button("Cancel Assignment"):
+                st.session_state.show_assign_location_form = False
+                if 'selected_items' in st.session_state:
+                    del st.session_state.selected_items
+                st.rerun()
+    
+    if st.session_state.get('show_quantity_adjust_form', False) and st.session_state.get('selected_item'):
+        with st.expander("📊 Adjust Quantity", expanded=True):
+            show_quantity_adjust_form()
+            if st.button("Cancel Quantity Adjustment"):
+                st.session_state.show_quantity_adjust_form = False
+                if 'selected_item' in st.session_state:
+                    del st.session_state.selected_item
+                st.rerun()
 
 def show_item_creation_form():
     """Display item creation form."""
@@ -595,18 +716,28 @@ def show_item_creation_form():
             statuses = get_status_options()
             status = st.selectbox("Status", statuses, help="Current status")
             
-            # Location selection (informational only for now)
+            # Location selection (required for inventory tracking)
             if locations:
                 location_options = {loc['id']: f"{loc['name']} ({loc.get('location_type', '').title()})" for loc in locations}
                 selected_location_id = st.selectbox(
-                    "Location (Optional)",
-                    options=[None] + list(location_options.keys()),
-                    format_func=lambda x: "No Location" if x is None else location_options[x],
-                    help="Location information will be managed separately"
+                    "Location*",
+                    options=list(location_options.keys()),
+                    format_func=lambda x: location_options[x],
+                    help="Required: Select where this item will be stored"
+                )
+                
+                # Quantity input
+                quantity = st.number_input(
+                    "Quantity",
+                    min_value=1,
+                    value=1,
+                    help="Number of items to add to this location"
                 )
             else:
-                st.info("ℹ️ No locations available. You can add locations later.")
+                st.error("⚠️ No locations available. Please create at least one location before adding items.")
+                st.stop()
                 selected_location_id = None
+                quantity = 1
             
             # Category selection
             selected_category_id = None
@@ -654,12 +785,18 @@ def show_item_creation_form():
                 st.error("Item name is required")
                 return
             
-            # Prepare item data
+            if not selected_location_id:
+                st.error("Location is required")
+                return
+            
+            # Prepare item data including location and quantity
             item_data = {
                 "name": name.strip(),
                 "item_type": item_type,
                 "condition": condition,
-                "status": status
+                "status": status,
+                "location_id": selected_location_id,
+                "quantity": quantity
             }
             
             # Add optional fields
@@ -694,20 +831,375 @@ def show_item_creation_form():
             if notes.strip():
                 item_data["notes"] = notes.strip()
             
-            # Create the item
-            with st.spinner("Creating item..."):
+            # Create the item with location assignment
+            with st.spinner("Creating item and assigning to location..."):
                 result = safe_api_call(
-                    lambda: api_client.create_item(item_data),
+                    lambda: api_client.create_item_with_location(item_data),
                     "Failed to create item"
                 )
                 
                 if result:
-                    show_success(f"Item '{name}' created successfully!")
+                    location_name = location_options.get(selected_location_id, "Unknown Location")
+                    if quantity == 1:
+                        show_success(f"Item '{name}' created and assigned to {location_name}!")
+                    else:
+                        show_success(f"Item '{name}' created with {quantity} units assigned to {location_name}!")
+                    
                     # Clear cache and close form
                     if 'items_cache' in st.session_state:
                         del st.session_state.items_cache
                     st.session_state.show_create_form = False
                     st.rerun()
+
+def show_move_items_form():
+    """Display form for moving selected items between locations."""
+    st.markdown("### 📍 Move Items Between Locations")
+    
+    selected_items = st.session_state.get('selected_items', [])
+    if not selected_items:
+        st.error("No items selected for moving.")
+        return
+    
+    api_client = APIClient()
+    
+    # Load locations for destination selection
+    locations = safe_api_call(
+        lambda: api_client.get_locations(skip=0, limit=1000),
+        "Failed to load locations"
+    ) or []
+    
+    if not locations:
+        st.error("No locations available for moving items.")
+        return
+    
+    # Display selected items
+    st.markdown(f"**Moving {len(selected_items)} items:**")
+    for item in selected_items:
+        st.write(f"• {item.get('name', 'Unknown Item')}")
+    
+    with st.form("move_items_form"):
+        # Destination location selection
+        location_options = {loc['id']: f"{loc['name']} ({loc.get('location_type', '').title()})" for loc in locations}
+        destination_location_id = st.selectbox(
+            "Destination Location*",
+            options=list(location_options.keys()),
+            format_func=lambda x: location_options[x],
+            help="Select where to move the selected items"
+        )
+        
+        # Quantity to move (for items with multiple quantities)
+        move_all = st.checkbox("Move all quantities", value=True, help="Move all quantities to new location")
+        
+        if not move_all:
+            quantity_to_move = st.number_input(
+                "Quantity to Move",
+                min_value=1,
+                value=1,
+                help="Number of items to move (for partial moves)"
+            )
+        else:
+            quantity_to_move = None
+        
+        # Optional notes
+        move_notes = st.text_area("Move Notes", help="Optional notes about this move operation")
+        
+        # Submit button
+        submitted = st.form_submit_button("✅ Move Items", type="primary")
+        
+        if submitted:
+            success_count = 0
+            errors = []
+            
+            with st.spinner("Moving items..."):
+                for item in selected_items:
+                    try:
+                        # Get current inventory entries for this item
+                        current_inventory = safe_api_call(
+                            lambda: api_client.get_inventory(item_id=item['id']),
+                            f"Failed to get inventory for {item.get('name', 'Unknown')}"
+                        ) or []
+                        
+                        if not current_inventory:
+                            # Item not in inventory - create new entry
+                            result = safe_api_call(
+                                lambda: api_client.create_inventory_entry(
+                                    item_id=item['id'],
+                                    location_id=destination_location_id,
+                                    quantity=1
+                                ),
+                                f"Failed to assign {item.get('name', 'Unknown')} to location"
+                            )
+                            if result:
+                                success_count += 1
+                        else:
+                            # Move from existing location(s)
+                            for entry in current_inventory:
+                                current_location_id = entry['location_id']
+                                current_quantity = entry.get('quantity', 1)
+                                move_qty = quantity_to_move if quantity_to_move else current_quantity
+                                
+                                result = safe_api_call(
+                                    lambda: api_client.move_item(
+                                        item_id=item['id'],
+                                        from_location_id=current_location_id,
+                                        to_location_id=destination_location_id,
+                                        quantity=move_qty
+                                    ),
+                                    f"Failed to move {item.get('name', 'Unknown')}"
+                                )
+                                if result:
+                                    success_count += 1
+                                    break  # Only move from first location for now
+                    
+                    except Exception as e:
+                        errors.append(f"{item.get('name', 'Unknown')}: {str(e)}")
+            
+            # Show results
+            if success_count > 0:
+                destination_name = location_options.get(destination_location_id, "Unknown Location")
+                show_success(f"Successfully moved {success_count} items to {destination_name}!")
+            
+            if errors:
+                st.error("Some items could not be moved:")
+                for error in errors:
+                    st.write(f"• {error}")
+            
+            # Clear cache and close form
+            if 'items_cache' in st.session_state:
+                del st.session_state.items_cache
+            st.session_state.show_move_form = False
+            if 'selected_items' in st.session_state:
+                del st.session_state.selected_items
+            st.rerun()
+
+def show_assign_location_form():
+    """Display form for assigning locations to items without inventory entries."""
+    st.markdown("### 📍 Assign Items to Locations")
+    
+    selected_items = st.session_state.get('selected_items', [])
+    if not selected_items:
+        st.error("No items selected for location assignment.")
+        return
+    
+    api_client = APIClient()
+    
+    # Load locations
+    locations = safe_api_call(
+        lambda: api_client.get_locations(skip=0, limit=1000),
+        "Failed to load locations"
+    ) or []
+    
+    if not locations:
+        st.error("No locations available. Please create locations first.")
+        return
+    
+    # Filter items that don't have inventory entries
+    items_without_location = []
+    for item in selected_items:
+        inventory_entries = item.get('inventory_entries', [])
+        if not inventory_entries or len(inventory_entries) == 0:
+            items_without_location.append(item)
+    
+    if not items_without_location:
+        st.info("All selected items already have location assignments.")
+        return
+    
+    # Display items to be assigned
+    st.markdown(f"**Assigning locations to {len(items_without_location)} items:**")
+    for item in items_without_location:
+        st.write(f"• {item.get('name', 'Unknown Item')}")
+    
+    with st.form("assign_location_form"):
+        # Location selection
+        location_options = {loc['id']: f"{loc['name']} ({loc.get('location_type', '').title()})" for loc in locations}
+        selected_location_id = st.selectbox(
+            "Assign to Location*",
+            options=list(location_options.keys()),
+            format_func=lambda x: location_options[x],
+            help="Select location to assign these items to"
+        )
+        
+        # Default quantity
+        default_quantity = st.number_input(
+            "Default Quantity",
+            min_value=1,
+            value=1,
+            help="Default quantity for each item"
+        )
+        
+        # Optional notes
+        assignment_notes = st.text_area("Assignment Notes", help="Optional notes about this assignment")
+        
+        # Submit button
+        submitted = st.form_submit_button("✅ Assign to Location", type="primary")
+        
+        if submitted:
+            success_count = 0
+            errors = []
+            
+            with st.spinner("Assigning items to location..."):
+                for item in items_without_location:
+                    try:
+                        result = safe_api_call(
+                            lambda: api_client.create_inventory_entry(
+                                item_id=item['id'],
+                                location_id=selected_location_id,
+                                quantity=default_quantity
+                            ),
+                            f"Failed to assign {item.get('name', 'Unknown')} to location"
+                        )
+                        
+                        if result:
+                            success_count += 1
+                    
+                    except Exception as e:
+                        errors.append(f"{item.get('name', 'Unknown')}: {str(e)}")
+            
+            # Show results
+            if success_count > 0:
+                location_name = location_options.get(selected_location_id, "Unknown Location")
+                show_success(f"Successfully assigned {success_count} items to {location_name}!")
+            
+            if errors:
+                st.error("Some items could not be assigned:")
+                for error in errors:
+                    st.write(f"• {error}")
+            
+            # Clear cache and close form
+            if 'items_cache' in st.session_state:
+                del st.session_state.items_cache
+            st.session_state.show_assign_location_form = False
+            if 'selected_items' in st.session_state:
+                del st.session_state.selected_items
+            st.rerun()
+
+def show_quantity_adjust_form():
+    """Display form for adjusting item quantities at specific locations."""
+    st.markdown("### 📊 Adjust Item Quantity")
+    
+    selected_item = st.session_state.get('selected_item')
+    if not selected_item:
+        st.error("No item selected for quantity adjustment.")
+        return
+    
+    api_client = APIClient()
+    
+    # Get current inventory entries for this item
+    inventory_entries = safe_api_call(
+        lambda: api_client.get_inventory(item_id=selected_item['id']),
+        f"Failed to load inventory for {selected_item.get('name', 'Unknown')}"
+    ) or []
+    
+    if not inventory_entries:
+        st.error("This item is not currently assigned to any locations.")
+        return
+    
+    st.markdown(f"**Adjusting quantities for: {selected_item.get('name', 'Unknown Item')}**")
+    
+    with st.form("quantity_adjust_form"):
+        st.markdown("**Current Inventory:**")
+        
+        # Show current quantities and allow adjustment
+        adjustments = {}
+        for i, entry in enumerate(inventory_entries):
+            location_name = "Unknown Location"
+            if entry.get('location'):
+                location_name = entry['location'].get('name', 'Unknown Location')
+            elif entry.get('location_id'):
+                try:
+                    location = api_client.get_location(entry['location_id'])
+                    location_name = location.get('name', f"Location {entry['location_id']}")
+                except:
+                    location_name = f"Location {entry['location_id']}"
+            
+            current_qty = entry.get('quantity', 1)
+            
+            col1, col2 = st.columns([2, 1])
+            with col1:
+                st.write(f"**{location_name}**")
+                st.write(f"Current: {current_qty}")
+            
+            with col2:
+                new_qty = st.number_input(
+                    "New Quantity",
+                    min_value=0,
+                    value=current_qty,
+                    key=f"qty_{i}",
+                    help=f"New quantity for {location_name}"
+                )
+                adjustments[entry.get('id')] = {
+                    'current': current_qty,
+                    'new': new_qty,
+                    'location_name': location_name
+                }
+        
+        # Adjustment reason
+        adjustment_reason = st.text_area(
+            "Reason for Adjustment",
+            help="Optional notes explaining the quantity changes"
+        )
+        
+        # Submit button
+        submitted = st.form_submit_button("✅ Update Quantities", type="primary")
+        
+        if submitted:
+            success_count = 0
+            errors = []
+            changes_made = []
+            
+            with st.spinner("Updating quantities..."):
+                for inventory_id, adjustment in adjustments.items():
+                    current_qty = adjustment['current']
+                    new_qty = adjustment['new']
+                    location_name = adjustment['location_name']
+                    
+                    if current_qty != new_qty:
+                        try:
+                            if new_qty == 0:
+                                # Remove inventory entry if quantity is 0
+                                result = safe_api_call(
+                                    lambda: api_client.delete_inventory_entry(inventory_id),
+                                    f"Failed to remove item from {location_name}"
+                                )
+                                if result:
+                                    success_count += 1
+                                    changes_made.append(f"Removed from {location_name}")
+                            else:
+                                # Update quantity
+                                result = safe_api_call(
+                                    lambda: api_client.update_inventory_entry(
+                                        inventory_id,
+                                        {'quantity': new_qty}
+                                    ),
+                                    f"Failed to update quantity at {location_name}"
+                                )
+                                if result:
+                                    success_count += 1
+                                    changes_made.append(f"{location_name}: {current_qty} → {new_qty}")
+                        
+                        except Exception as e:
+                            errors.append(f"{location_name}: {str(e)}")
+            
+            # Show results
+            if success_count > 0:
+                show_success(f"Successfully updated {success_count} inventory entries!")
+                if changes_made:
+                    st.info("Changes made:")
+                    for change in changes_made:
+                        st.write(f"• {change}")
+            
+            if errors:
+                st.error("Some quantities could not be updated:")
+                for error in errors:
+                    st.write(f"• {error}")
+            
+            # Clear cache and close form
+            if 'items_cache' in st.session_state:
+                del st.session_state.items_cache
+            st.session_state.show_quantity_adjust_form = False
+            if 'selected_item' in st.session_state:
+                del st.session_state.selected_item
+            st.rerun()
 
 # Main execution
 if __name__ == "__main__":

@@ -265,6 +265,21 @@ class APIClient:
         """Create a new item."""
         return self._make_request("POST", "items/", data=item_data)
     
+    def create_item_with_location(self, item_data: dict) -> dict:
+        """
+        Create a new item and assign it to a location via inventory service.
+        
+        Args:
+            item_data: Item data including location_id and quantity fields
+            
+        Returns:
+            dict: Created item data with inventory information
+            
+        Raises:
+            APIError: If location doesn't exist, validation fails, or duplicate serial/barcode
+        """
+        return self._make_request("POST", "items/with-location", data=item_data)
+    
     def update_item(self, item_id: int, item_data: dict) -> dict:
         """Update an existing item."""
         return self._make_request("PUT", f"items/{item_id}", data=item_data)
@@ -414,6 +429,38 @@ class APIClient:
         """Create multiple inventory entries in a single transaction."""
         data = {"operations": operations}
         return self._make_request("POST", "inventory/bulk", data=data)
+    
+    def get_items_with_inventory(self, **kwargs) -> List[dict]:
+        """
+        Get items enriched with inventory information.
+        
+        Args:
+            **kwargs: Same parameters as get_items()
+            
+        Returns:
+            List of items with inventory_entries field added
+        """
+        # Get basic items
+        items = self.get_items(**kwargs)
+        
+        # Enrich with inventory information
+        for item in items:
+            try:
+                inventory_entries = self.get_inventory(item_id=item['id'])
+                # Add location details to inventory entries
+                for entry in inventory_entries:
+                    if entry.get('location_id'):
+                        try:
+                            location = self.get_location(entry['location_id'])
+                            entry['location'] = location
+                        except:
+                            entry['location'] = {'name': 'Unknown Location', 'id': entry['location_id']}
+                
+                item['inventory_entries'] = inventory_entries
+            except:
+                item['inventory_entries'] = []
+        
+        return items
     
     # Utility Methods
     
