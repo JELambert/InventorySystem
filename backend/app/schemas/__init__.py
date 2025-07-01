@@ -32,6 +32,7 @@ from .category import (
 from .item import (
     ItemBase,
     ItemCreate,
+    ItemCreateWithLocation,
     ItemUpdate,
     ItemResponse,
     ItemSummary,

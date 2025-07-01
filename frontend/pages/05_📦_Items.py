@@ -13,7 +13,7 @@ from datetime import datetime
 from utils.api_client import APIClient, APIError
 from utils.helpers import (
     safe_api_call, show_error, show_success, show_warning,
-    handle_api_error, SessionManager
+    handle_api_error, SessionManager, safe_currency_format, format_datetime
 )
 from components.keyboard_shortcuts import (
     enable_keyboard_shortcuts, show_keyboard_shortcuts_help,
@@ -214,8 +214,8 @@ def create_item_dataframe(items: List[Dict], show_inventory: bool = True) -> pd.
             "Model": item.get("model", ""),
             "Condition": item.get("condition", "").replace("_", " ").title(),
             "Status": item.get("status", "").replace("_", " ").title(),
-            "Current Value": f"${item.get('current_value', 0):.2f}" if item.get('current_value') else "",
-            "Purchase Price": f"${item.get('purchase_price', 0):.2f}" if item.get('purchase_price') else "",
+            "Current Value": safe_currency_format(item.get('current_value')) if item.get('current_value') else "",
+            "Purchase Price": safe_currency_format(item.get('purchase_price')) if item.get('purchase_price') else "",
             "Purchase Date": item.get("purchase_date", "").split("T")[0] if item.get("purchase_date") else "",
             "Category": item.get("category", {}).get("name", "") if item.get("category") else "",
             "Tags": item.get("tags", ""),
@@ -271,9 +271,9 @@ def display_item_details(item: Dict):
     
     with col2:
         if item.get("current_value"):
-            st.metric("Current Value", f"${item['current_value']:.2f}")
+            st.metric("Current Value", safe_currency_format(item['current_value']))
         if item.get("purchase_price"):
-            st.metric("Purchase Price", f"${item['purchase_price']:.2f}")
+            st.metric("Purchase Price", safe_currency_format(item['purchase_price']))
         if item.get("purchase_date"):
             st.metric("Purchase Date", item["purchase_date"].split("T")[0])
     
@@ -320,7 +320,7 @@ def display_item_details(item: Dict):
                 "Location": entry.get("location", {}).get("name", "Unknown"),
                 "Quantity": entry.get("quantity", 1),
                 "Last Updated": entry.get("updated_at", "").split("T")[0] if entry.get("updated_at") else "",
-                "Total Value": f"${entry.get('total_value', 0):.2f}" if entry.get('total_value') else ""
+                "Total Value": safe_currency_format(entry.get('total_value')) if entry.get('total_value') else ""
             })
         
         if location_df_data:
@@ -384,7 +384,7 @@ def show_items_page():
                     with col1:
                         st.metric("Total Items", stats.get("total_items", 0))
                     with col2:
-                        st.metric("Total Value", f"${stats.get('total_value', 0):.2f}")
+                        st.metric("Total Value", safe_currency_format(stats.get('total_value')))
                     with col3:
                         st.metric("Available Items", stats.get("available_items", 0))
                     with col4:
@@ -512,7 +512,7 @@ def show_items_page():
                                     st.write(f"**Type:** {item.get('item_type', '').replace('_', ' ').title()}")
                                     st.write(f"**Status:** {item.get('status', '').replace('_', ' ').title()}")
                                     if item.get("current_value"):
-                                        st.write(f"**Value:** ${item['current_value']:.2f}")
+                                        st.write(f"**Value:** {safe_currency_format(item['current_value'])}")
                                     
                                     if st.button(f"View Details", key=f"view_{item.get('id')}"):
                                         st.session_state.selected_item = item
@@ -595,17 +595,17 @@ def show_item_creation_form():
             statuses = get_status_options()
             status = st.selectbox("Status", statuses, help="Current status")
             
-            # Location selection
+            # Location selection (informational only for now)
             if locations:
                 location_options = {loc['id']: f"{loc['name']} ({loc.get('location_type', '').title()})" for loc in locations}
                 selected_location_id = st.selectbox(
-                    "Location*",
-                    options=list(location_options.keys()),
-                    format_func=lambda x: location_options[x],
-                    help="Where is this item stored?"
+                    "Location (Optional)",
+                    options=[None] + list(location_options.keys()),
+                    format_func=lambda x: "No Location" if x is None else location_options[x],
+                    help="Location information will be managed separately"
                 )
             else:
-                st.warning("⚠️ No locations available. Please create a location first.")
+                st.info("ℹ️ No locations available. You can add locations later.")
                 selected_location_id = None
             
             # Category selection
@@ -659,8 +659,7 @@ def show_item_creation_form():
                 "name": name.strip(),
                 "item_type": item_type,
                 "condition": condition,
-                "status": status,
-                "location_id": selected_location_id
+                "status": status
             }
             
             # Add optional fields

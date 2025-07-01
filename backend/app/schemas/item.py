@@ -81,6 +81,12 @@ class ItemCreate(ItemBase):
     pass
 
 
+class ItemCreateWithLocation(ItemBase):
+    """Schema for creating a new item with location assignment."""
+    location_id: int = Field(..., description="Location where item will be stored")
+    quantity: int = Field(1, ge=1, description="Quantity of items to add to location")
+
+
 class ItemUpdate(BaseModel):
     """Schema for updating an existing item."""
     
@@ -166,7 +172,6 @@ class ItemSummary(BaseModel):
     brand: Optional[str] = Field(None, description="Brand or manufacturer")
     model: Optional[str] = Field(None, description="Model number or name")
     current_value: Optional[Decimal] = Field(None, description="Current estimated value")
-    location_id: int = Field(..., description="Location where item is stored")
     category_id: Optional[int] = Field(None, description="Optional category for organization")
     created_at: datetime = Field(..., description="Creation timestamp")
     
