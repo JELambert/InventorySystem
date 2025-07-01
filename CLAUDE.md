@@ -166,9 +166,9 @@ docker-compose up -d
 
 ### 🚨 MANDATORY Development Process Requirements
 
-> **CRITICAL**: Documentation is NOT optional. Failure to follow these requirements will result in incomplete work that cannot be considered "done".
+> **CRITICAL**: Documentation AND Git commits are NOT optional. Failure to follow these requirements will result in incomplete work that cannot be considered "done".
 
-#### **📝 IMMEDIATE Documentation Requirements**
+#### **📝 IMMEDIATE Documentation & Git Requirements**
 
 **BEFORE marking any task as complete, you MUST:**
 
@@ -187,7 +187,14 @@ docker-compose up -d
    - Include both automated (pytest) and manual verification
    - If tests fail, task is NOT complete
 
-3. **📋 Update TODO Tracking**
+3. **📝 Create Git Commit with Descriptive Message** - This is MANDATORY
+   - Commit ALL relevant changes with comprehensive commit message
+   - Use conventional commit format: `feat:`, `fix:`, `docs:`, `refactor:`, etc.
+   - Include detailed description of what was changed and why
+   - Add co-authorship: `Co-Authored-By: Claude <noreply@anthropic.com>`
+   - Must include emojis and structured sections for readability
+
+4. **📋 Update TODO Tracking**
    - Use TodoWrite tool to track ALL significant work
    - Mark tasks in_progress when starting, completed when done
    - Break complex work into trackable subtasks
@@ -195,17 +202,21 @@ docker-compose up -d
 
 #### **⚠️ Process Enforcement Rules**
 
-**UNACCEPTABLE**: Completing significant work without documentation
+**UNACCEPTABLE**: Completing significant work without documentation AND git commits
 - ❌ Making multiple fixes without logging each one
 - ❌ "Batching" documentation at the end of a session
 - ❌ Skipping DEVELOPMENT_LOG.md updates
 - ❌ Claiming work is "complete" without proper verification
+- ❌ Working without committing changes to git
+- ❌ Making commits without descriptive messages
 
-**REQUIRED**: Real-time documentation discipline
+**REQUIRED**: Real-time documentation and git discipline
 - ✅ Document each significant change as it's made
 - ✅ Update DEVELOPMENT_LOG.md after every major task
+- ✅ Create descriptive git commits for every significant change
 - ✅ Use TodoWrite tool to track ALL work in progress
 - ✅ Include timestamp, duration, and complexity assessment
+- ✅ Maintain clean git history with meaningful commit messages
 
 #### **📚 Documentation Quality Standards**
 
@@ -217,6 +228,42 @@ Each DEVELOPMENT_LOG.md entry MUST include:
 - **Architecture decisions with reasoning** (why, not just what)
 - **Current state verification** (how you know it works)
 - **Technical debt assessment** (what issues remain)
+
+#### **🔄 Git Commit Standards**
+
+Every commit message MUST follow this format:
+```
+<type>: <concise description>
+
+🚀 <emoji> Brief summary of changes
+
+## <Section headers as needed>
+- Bullet point details
+- Specific changes made
+- Impact and reasoning
+
+## Current Status
+✅ What's working
+⏳ What's pending
+❌ What's broken (if any)
+
+## Testing Verified
+- Manual testing performed
+- Automated tests run
+- Verification steps taken
+
+🤖 Generated with [Claude Code](https://claude.ai/code)
+
+Co-Authored-By: Claude <noreply@anthropic.com>
+```
+
+**Commit Types:**
+- `feat:` New features or functionality
+- `fix:` Bug fixes and issue resolution  
+- `docs:` Documentation updates
+- `refactor:` Code reorganization without behavior change
+- `test:` Test additions or modifications
+- `chore:` Maintenance tasks, dependency updates
 
 #### **🔄 Real-Time Process Flow**
 
@@ -279,5 +326,15 @@ Refer to `Architecture.md` for comprehensive technical details including:
 4. ✅ Complete item creation functionality directly in items page
 5. ✅ Comprehensive error handling and user feedback improvements
 6. ✅ Frontend robustness enhancements with fallback strategies
+7. ✅ Schema-model architecture fixes (location_id mismatch resolution)
+8. ✅ Currency formatting safety throughout frontend
 
-**Current System Status**: Fully functional inventory management system with robust PostgreSQL backend, comprehensive Streamlit frontend, and complete CRUD operations for all entities (locations, categories, items). All major frontend issues resolved - ready for production use or Phase 2 enhancement.
+**Current System Status**: Fully functional inventory management system with robust PostgreSQL backend, comprehensive Streamlit frontend, and complete CRUD operations for all entities (locations, categories, items). All major frontend issues resolved - **ready for Phase 2 enhancement**.
+
+**🎯 Phase 2 READY** - Inventory System Integration & Polish:
+1. **Inventory Location Management**: Integrate inventory service for proper item-location relationships
+2. **Enhanced Item Features**: Add photo upload, barcode scanning, bulk operations
+3. **Advanced Search**: Implement semantic search with Weaviate vector database
+4. **Production Hardening**: Add comprehensive validation, error boundaries, performance optimization
+5. **User Experience Polish**: Mobile responsiveness, keyboard shortcuts, advanced filtering
+6. **Documentation & Testing**: Complete API documentation, comprehensive test coverage
