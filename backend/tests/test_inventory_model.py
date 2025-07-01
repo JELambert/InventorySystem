@@ -303,29 +303,30 @@ async def test_item_primary_location_property(test_session):
 
 
 @pytest.mark.asyncio
-async def test_item_full_location_path_property(test_session):
+async def test_item_full_location_path_property():
     """Test the Item.full_location_path property with inventory."""
-    # Create test data
-    location = Location(name="Test Location", location_type=LocationType.ROOM)
-    test_session.add(location)
+    async for test_session in _get_test_session():
+        # Create test data
+        location = Location(name="Test Location", location_type=LocationType.ROOM)
+        test_session.add(location)
 
-    item = Item(name="Test Item", item_type=ItemType.OTHER)
-    test_session.add(item)
+        item = Item(name="Test Item", item_type=ItemType.OTHER)
+        test_session.add(item)
 
-    await test_session.commit()
-    await test_session.refresh(location)
-    await test_session.refresh(item)
+        await test_session.commit()
+        await test_session.refresh(location)
+        await test_session.refresh(item)
 
-    # Without inventory entry
-    assert item.full_location_path == "Test Item"
+        # Without inventory entry
+        assert item.full_location_path == "Test Item"
 
-    # With inventory entry
-    inventory = Inventory(item_id=item.id, location_id=location.id, quantity=1)
-    test_session.add(inventory)
-    await test_session.commit()
-    await test_session.refresh(item)
+        # With inventory entry
+        inventory = Inventory(item_id=item.id, location_id=location.id, quantity=1)
+        test_session.add(inventory)
+        await test_session.commit()
+        await test_session.refresh(item)
 
-    assert "Test Location/Test Item" in item.full_location_path
+        assert "Test Location/Test Item" in item.full_location_path
 
 
 @pytest.mark.asyncio

@@ -60,13 +60,12 @@ async def _create_sample_category(session):
 async def test_create_basic_item():
     """Test creating a basic item with required fields."""
     async for session in _get_test_session():
-        # Create location first
-        location = await _create_sample_location(session)
+        # Items no longer have direct location_id field
+        # Location relationship is through Inventory model
         
         item = Item(
             name="Basic Item",
-            item_type=ItemType.OTHER,
-            location_id=location.id
+            item_type=ItemType.OTHER
         )
         
         session.add(item)
@@ -76,7 +75,6 @@ async def test_create_basic_item():
         assert item.id is not None
         assert item.name == "Basic Item"
         assert item.item_type == ItemType.OTHER
-        assert item.location_id == location.id
         assert item.condition == ItemCondition.GOOD  # Default
         assert item.status == ItemStatus.AVAILABLE  # Default
         assert item.is_active is True  # Default
@@ -111,7 +109,6 @@ async def test_create_comprehensive_item():
             weight=Decimal("2.5"),
             dimensions="35x25x2 cm",
             color="Black",
-            location_id=location.id,
             category_id=category.id,
             notes="Excellent condition gaming laptop",
             tags="gaming, laptop, high-end"
@@ -145,18 +142,23 @@ async def test_item_relationships():
         item = Item(
             name="Test Item",
             item_type=ItemType.ELECTRONICS,
-            location_id=location.id,
             category_id=category.id
         )
         
         session.add(item)
         await session.commit()
-        await session.refresh(item, ["location", "category"])
+        await session.refresh(item, ["category"])
         
-        # Test location relationship
-        assert item.location is not None
-        assert item.location.id == location.id
-        assert item.location.name == location.name
+        # Location relationship is now through Inventory model
+        # Create inventory entry to establish location relationship
+        from app.models import Inventory
+        inventory = Inventory(
+            item_id=item.id,
+            location_id=location.id,
+            quantity=1
+        )
+        session.add(inventory)
+        await session.commit()
         
         # Test category relationship
         assert item.category is not None
@@ -170,7 +172,6 @@ def test_item_properties():
     item = Item(
         name="Test Laptop",
         item_type=ItemType.ELECTRONICS,
-        location_id=1,
         brand="TestBrand",
         model="TB-2023",
         current_value=Decimal("800.00"),
@@ -192,7 +193,7 @@ def test_item_properties():
 
 def test_item_validation_methods():
     """Test validation methods."""
-    item = Item(name="Test", item_type=ItemType.OTHER, location_id=1)
+    item = Item(name="Test", item_type=ItemType.OTHER)
     
     # Test validate_serial_number_format
     item.serial_number = "ABC123456"
@@ -211,7 +212,7 @@ def test_item_validation_methods():
 
 def test_barcode_validation():
     """Test barcode format validation."""
-    item = Item(name="Test", item_type=ItemType.OTHER, location_id=1)
+    item = Item(name="Test", item_type=ItemType.OTHER)
     
     # Valid barcodes
     valid_barcodes = ["12345678", "123456789012", "1234567890123", "12345678901234"]
@@ -231,7 +232,7 @@ def test_barcode_validation():
 
 def test_price_validation():
     """Test price value validation."""
-    item = Item(name="Test", item_type=ItemType.OTHER, location_id=1)
+    item = Item(name="Test", item_type=ItemType.OTHER)
     
     # Valid prices
     item.purchase_price = Decimal("100.00")
@@ -262,42 +263,38 @@ def test_business_logic_methods():
     item = Item(
         name="Test Item",
         item_type=ItemType.OTHER,
-        location_id=1,
         current_value=Decimal("100.00")
     )
     original_version = item.version
     
-    # Test move_to_location
-    new_location_id = 999
-    item.move_to_location(new_location_id)
-    assert item.location_id == new_location_id
-    assert item.version == original_version + 1
+    # Test move_to_location method needs redesign
+    # as Item doesn't have direct location_id anymore
+    # This would be handled through Inventory service
     
     # Test update_condition
     item.update_condition(ItemCondition.FAIR, "Showing signs of wear")
     assert item.condition == ItemCondition.FAIR
     assert "Showing signs of wear" in item.notes
-    assert item.version == original_version + 2
+    assert item.version == original_version + 1
     
     # Test update_status
     item.update_status(ItemStatus.LOANED, "Loaned to colleague")
     assert item.status == ItemStatus.LOANED
     assert "Status changed to loaned" in item.notes
-    assert item.version == original_version + 3
+    assert item.version == original_version + 2
     
     # Test update_value
     item.update_value(Decimal("70.00"), "Market depreciation")
     assert item.current_value == Decimal("70.00")
     assert "Value updated from" in item.notes
-    assert item.version == original_version + 4
+    assert item.version == original_version + 3
 
 
 def test_soft_delete_and_restore():
     """Test soft delete and restore functionality."""
     item = Item(
         name="Test Item",
-        item_type=ItemType.OTHER,
-        location_id=1
+        item_type=ItemType.OTHER
     )
     original_version = item.version
     
@@ -320,8 +317,7 @@ def test_tag_operations():
     """Test tag management methods."""
     item = Item(
         name="Test Item",
-        item_type=ItemType.OTHER,
-        location_id=1
+        item_type=ItemType.OTHER
     )
     
     # Initially no tags
@@ -352,10 +348,9 @@ def test_tag_operations():
 
 def test_item_validate_class_method():
     """Test the class method for item validation."""
-    # Valid item data
+    # Valid item data (location_id removed as it's not part of Item model)
     valid_data = {
         'name': 'Test Item',
-        'location_id': 1,
         'item_type': 'electronics',
         'condition': 'good',
         'status': 'available',
@@ -370,7 +365,6 @@ def test_item_validate_class_method():
     # Invalid item data
     invalid_data = {
         'name': '',  # Empty name
-        'location_id': None,  # Missing location
         'item_type': 'invalid_type',  # Invalid enum
         'condition': 'invalid_condition',  # Invalid enum
         'purchase_price': '-100.00',  # Negative price
@@ -380,7 +374,6 @@ def test_item_validate_class_method():
     errors = Item.validate_item(invalid_data)
     assert len(errors) > 0
     assert any("name is required" in error for error in errors)
-    assert any("Location is required" in error for error in errors)
     assert any("Invalid item type" in error for error in errors)
     assert any("Invalid condition" in error for error in errors)
     assert any("cannot be negative" in error for error in errors)
@@ -397,8 +390,7 @@ async def test_enum_constraints():
             name="Test Item",
             item_type=ItemType.ELECTRONICS,
             condition=ItemCondition.EXCELLENT,
-            status=ItemStatus.AVAILABLE,
-            location_id=location.id
+            status=ItemStatus.AVAILABLE
         )
         
         session.add(item)
@@ -420,7 +412,6 @@ async def test_unique_constraints():
         item1 = Item(
             name="Item 1",
             item_type=ItemType.ELECTRONICS,
-            location_id=location.id,
             serial_number="UNIQUE123",
             barcode="1234567890123"
         )
@@ -432,7 +423,6 @@ async def test_unique_constraints():
         item2 = Item(
             name="Item 2",
             item_type=ItemType.ELECTRONICS,
-            location_id=location.id,
             serial_number="UNIQUE123"  # Same serial number
         )
         
@@ -447,7 +437,6 @@ async def test_unique_constraints():
         item3 = Item(
             name="Item 3",
             item_type=ItemType.ELECTRONICS,
-            location_id=location.id,
             barcode="1234567890123"  # Same barcode
         )
         
