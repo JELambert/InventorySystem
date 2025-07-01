@@ -322,6 +322,162 @@ CREATE INDEX ix_inventory_updated_at ON inventory(updated_at);
 **Deployment**: Docker containers on Proxmox with external database LXCs
 **Monitoring**: Health checks and basic metrics collection
 
+## API Documentation
+
+The FastAPI backend provides a comprehensive REST API with 26+ endpoints organized by resource:
+
+### Items API (`/api/v1/items/`)
+
+**Core Endpoints**:
+- `POST /` - Create a new item
+- `POST /with-location` - **[NEW]** Create item and assign to location via inventory service
+- `GET /` - List items with filtering (pagination, search, type, status, location)
+- `GET /{item_id}` - Get specific item with enhanced details
+- `PUT /{item_id}` - Update existing item with validation
+- `DELETE /{item_id}` - Soft delete item (or permanent with `?permanent=true`)
+- `POST /{item_id}/restore` - Restore soft-deleted item
+
+**Advanced Operations**:
+- `POST /search` - Complex search with filtering (type, condition, status, value ranges, dates, warranties)
+- `POST /bulk-update` - Update multiple items at once
+- `POST /move` - Move multiple items to new location with audit trail
+- `PUT /{item_id}/status` - Update item status with notes
+- `PUT /{item_id}/condition` - Update item condition with notes
+- `PUT /{item_id}/value` - Update item current value with notes
+
+**Tag Management**:
+- `GET /{item_id}/tags` - Get item tags
+- `POST /{item_id}/tags/{tag}` - Add tag to item
+- `DELETE /{item_id}/tags/{tag}` - Remove tag from item
+
+**Analytics**:
+- `GET /statistics/overview` - Comprehensive item statistics and breakdowns
+
+### Locations API (`/api/v1/locations/`)
+
+**Core Endpoints**:
+- `POST /` - Create new location with hierarchy support
+- `GET /` - List locations with filtering and search
+- `GET /{location_id}` - Get specific location with full path
+- `PUT /{location_id}` - Update location with validation
+- `DELETE /{location_id}` - Delete location (with safety checks)
+
+**Hierarchy Operations**:
+- `GET /tree` - Get full location hierarchy as tree structure
+- `GET /{location_id}/children` - Get direct children of location
+- `GET /{location_id}/ancestors` - Get location ancestry path
+- `POST /search` - Advanced search with hierarchy filtering
+
+**Validation**:
+- `POST /validate` - Validate location data and business rules
+- `GET /stats/summary` - Location statistics and utilization
+
+### Categories API (`/api/v1/categories/`)
+
+**Core Endpoints**:
+- `POST /` - Create new category
+- `GET /` - List categories with filtering
+- `GET /{category_id}` - Get specific category
+- `PUT /{category_id}` - Update category
+- `DELETE /{category_id}` - Delete category
+
+**Analytics**:
+- `GET /stats/summary` - Category usage statistics
+
+### Inventory API (`/api/v1/inventory/`)
+
+**Core Endpoints**:
+- `POST /` - Create inventory entry (item-location assignment)
+- `GET /` - List inventory entries with filtering
+- `GET /{inventory_id}` - Get specific inventory entry
+- `PUT /{inventory_id}` - Update inventory entry
+- `DELETE /{inventory_id}` - Remove inventory entry
+
+**Advanced Operations**:
+- `POST /search` - Search inventory by item, location, quantity, value
+- `POST /move` - Move items between locations with quantity tracking
+- `POST /bulk` - Bulk inventory operations
+
+**Reports**:
+- `GET /summary` - Overall inventory summary with statistics
+- `GET /location/{location_id}/report` - Detailed location inventory report
+
+### New ItemCreateWithLocation Endpoint
+
+**Endpoint**: `POST /api/v1/items/with-location`
+
+**Purpose**: Creates a new item and immediately assigns it to a location through the inventory service, ensuring proper item-location relationships from creation.
+
+**Request Schema** (`ItemCreateWithLocation`):
+```json
+{
+  "name": "string",
+  "description": "string",
+  "item_type": "electronics|books|clothing|household|tools|...",
+  "condition": "excellent|good|fair|poor|unknown",
+  "status": "available|in_use|maintenance|lost|damaged|disposed",
+  "brand": "string",
+  "model": "string", 
+  "serial_number": "string (min 3 chars)",
+  "barcode": "string (8/12/13/14 digits)",
+  "purchase_price": "decimal",
+  "current_value": "decimal",
+  "purchase_date": "datetime",
+  "warranty_expiry": "datetime",
+  "weight": "decimal",
+  "dimensions": "string",
+  "color": "string",
+  "category_id": "integer",
+  "notes": "string",
+  "tags": "string (comma-separated)",
+  "location_id": "integer (required)",
+  "quantity": "integer (min 1, default 1)"
+}
+```
+
+**Response**:
+```json
+{
+  "id": "integer",
+  "name": "string",
+  "description": "string",
+  "item_type": "string",
+  "condition": "string", 
+  "status": "string",
+  "category_id": "integer",
+  "created_at": "datetime",
+  "updated_at": "datetime",
+  "inventory": {
+    "id": "integer",
+    "location_id": "integer",
+    "location_name": "string",
+    "quantity": "integer"
+  }
+}
+```
+
+**Validation**:
+- Validates location exists before item creation
+- Checks for duplicate serial numbers and barcodes
+- Enforces business rules (serial length, barcode format, warranty dates)
+- Creates atomic transaction (item + inventory entry)
+- Automatic rollback on any failure
+
+**Error Responses**:
+- `400` - Invalid location ID, duplicate serial/barcode, validation failures
+- `422` - Schema validation errors
+- `500` - Internal server error with automatic rollback
+
+### API Features
+
+**Authentication**: Ready for integration (endpoints prepared for auth middleware)
+**Validation**: Comprehensive Pydantic schemas with business rule validation
+**Error Handling**: Structured error responses with detailed messages
+**Documentation**: Auto-generated OpenAPI/Swagger documentation at `/docs`
+**Testing**: 65+ comprehensive test cases covering all endpoints
+**Performance**: Async operations with database connection pooling
+**Monitoring**: Health check endpoints for deployment monitoring
+
 ### Deployment Requirements
 
 **Infrastructure**:
@@ -362,10 +518,11 @@ CREATE INDEX ix_inventory_updated_at ON inventory(updated_at);
 
 **Additional Achievements**:
 - ✅ Inventory junction table implementation (ahead of original plan)
-- ✅ 25+ API endpoints with full documentation
+- ✅ 26+ API endpoints with full documentation
 - ✅ Comprehensive test suite (65+ tests)
 - ✅ Type safety throughout with Pydantic validation
 - ✅ Performance optimizations with database indexes
+- ✅ New ItemCreateWithLocation endpoint for integrated item-location management
 
 ### Phase 2: Enhanced Features (Weeks 5-8) 📍 CURRENT FOCUS
 

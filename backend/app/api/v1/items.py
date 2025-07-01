@@ -240,6 +240,96 @@ async def create_item(
     }
 
 
+@router.post("/with-location", status_code=201)
+async def create_item_with_location(
+    item_data: ItemCreateWithLocation,
+    session: AsyncSession = Depends(get_session)
+):
+    """Create a new item and assign it to a location via inventory service."""
+    
+    # Validate location exists
+    location_query = select(Location).where(Location.id == item_data.location_id)
+    location_result = await session.execute(location_query)
+    location = location_result.scalar_one_or_none()
+    
+    if not location:
+        raise HTTPException(
+            status_code=400, 
+            detail=f"Location with id {item_data.location_id} not found"
+        )
+    
+    # Check for duplicate serial number
+    if item_data.serial_number:
+        duplicate_serial_query = select(Item).where(Item.serial_number == item_data.serial_number)
+        duplicate_result = await session.execute(duplicate_serial_query)
+        if duplicate_result.scalar_one_or_none():
+            raise HTTPException(
+                status_code=400, 
+                detail=f"Item with serial number '{item_data.serial_number}' already exists"
+            )
+    
+    # Check for duplicate barcode
+    if item_data.barcode:
+        duplicate_barcode_query = select(Item).where(Item.barcode == item_data.barcode)
+        duplicate_result = await session.execute(duplicate_barcode_query)
+        if duplicate_result.scalar_one_or_none():
+            raise HTTPException(
+                status_code=400, 
+                detail=f"Item with barcode '{item_data.barcode}' already exists"
+            )
+    
+    try:
+        # Create item (exclude location_id and quantity from item creation)
+        item_dict = item_data.model_dump(exclude={'location_id', 'quantity'})
+        item = Item(**item_dict)
+        session.add(item)
+        await session.commit()
+        await session.refresh(item)
+        
+        logger.info(f"Created item: {item.name} (ID: {item.id})")
+        
+        # Create inventory entry to assign item to location
+        inventory_service = InventoryService(session)
+        
+        from app.schemas.inventory import InventoryCreate
+        inventory_data = InventoryCreate(
+            item_id=item.id,
+            location_id=item_data.location_id,
+            quantity=item_data.quantity
+        )
+        
+        inventory_entry = await inventory_service.create_inventory_entry(inventory_data)
+        
+        logger.info(f"Assigned item {item.name} (ID: {item.id}) to location {location.name} with quantity {item_data.quantity}")
+        
+        # Return enhanced response including location information
+        return {
+            "id": item.id,
+            "name": item.name,
+            "description": item.description,
+            "item_type": item.item_type,
+            "condition": item.condition,
+            "status": item.status,
+            "category_id": item.category_id,
+            "created_at": item.created_at,
+            "updated_at": item.updated_at,
+            "inventory": {
+                "id": inventory_entry.id,
+                "location_id": item_data.location_id,
+                "location_name": location.name,
+                "quantity": item_data.quantity
+            }
+        }
+        
+    except ValueError as e:
+        await session.rollback()
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        await session.rollback()
+        logger.error(f"Error creating item with location: {str(e)}")
+        raise HTTPException(status_code=500, detail="Internal server error")
+
+
 @router.get("/", response_model=List[ItemSummary])
 async def list_items(
     skip: int = Query(0, ge=0, description="Number of items to skip"),

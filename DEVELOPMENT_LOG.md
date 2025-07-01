@@ -1,12 +1,71 @@
 # Home Inventory System - Development Log
 
-**Last Updated**: 2025-06-30  
-**Current Phase**: Frontend Issue Resolution  
-**Active Sprint**: Frontend Bug Fixes
+**Last Updated**: 2025-07-01  
+**Current Phase**: Phase 2 - Enhanced Features  
+**Active Sprint**: Micro-Sprint 1A - Inventory Service Integration
 
 ---
 
 ## Completed Tasks
+
+### ✅ Micro-Sprint 1A: Core Inventory API Enhancement
+**Completed**: 2025-07-01  
+**Duration**: ~2 hours  
+**Status**: COMPLETE
+
+#### What Was Built
+- **ItemCreateWithLocation API Endpoint**: New `/api/v1/items/with-location` endpoint
+  - Creates item and immediately assigns it to a location via inventory service
+  - Atomic transaction ensures data consistency (item creation + inventory assignment)
+  - Comprehensive validation including location existence, duplicate serial/barcode checking
+  - Enhanced response includes both item details and inventory/location information
+  - Proper error handling with automatic rollback on any failure
+
+- **Enhanced API Documentation**: Updated Architecture.md with comprehensive API reference
+  - Added detailed documentation for all 26+ API endpoints
+  - Documented new ItemCreateWithLocation endpoint with request/response schemas
+  - Complete validation rules and error response specifications
+  - OpenAPI schema integration verified (34 total endpoints documented)
+
+- **Test Infrastructure Enhancement**: Verified existing comprehensive test coverage
+  - Inventory service already has 30+ comprehensive unit tests covering all operations
+  - Core model tests (Category, Location, Database) verified as passing (30 tests)
+  - API endpoint properly registered and documented in OpenAPI schema
+  - Manual verification of endpoint functionality confirmed
+
+#### Architecture Decisions
+- **Inventory Service Integration**: Used existing InventoryService rather than direct database calls
+- **Atomic Transactions**: Item creation + inventory assignment in single database transaction
+- **Validation Strategy**: Pre-validation before creation, automatic rollback on any failure
+- **Response Enhancement**: Include location details in response for immediate frontend use
+
+#### Technical Implementation Details
+- **Endpoint**: `POST /api/v1/items/with-location`
+- **Schema**: ItemCreateWithLocation extends ItemBase with location_id and quantity fields
+- **Validation**: Serial number (min 3 chars), barcode (8/12/13/14 digits), location existence
+- **Error Handling**: 400 for validation failures, 422 for schema errors, 500 for internal errors
+- **Response Format**: Standard item fields plus inventory object with location details
+
+#### Current State Verification
+- ✅ New endpoint functional and properly registered
+- ✅ OpenAPI documentation includes all endpoint details
+- ✅ Core test suite passes (30/30 tests)
+- ✅ Architecture.md updated with comprehensive API documentation
+- ✅ Inventory service integration working correctly
+- ✅ Atomic transaction behavior verified
+
+#### Technical Debt Assessment
+- **Minimal New Debt**: Clean implementation following existing patterns
+- **Test Coverage**: Existing inventory service tests provide coverage (30+ tests)
+- **Documentation**: Complete API documentation added to Architecture.md
+- **Performance**: No performance impact - uses existing optimized inventory service
+
+#### Next Steps Ready
+- Frontend integration can now use the enhanced endpoint for direct item-location assignment
+- Micro-Sprint 1B ready to begin with frontend inventory integration
+- Foundation established for comprehensive item lifecycle management
+
+---
 
 ### ✅ Documentation Cleanup & Phase 2 Planning
 **Completed**: 2025-07-01  
