@@ -53,31 +53,63 @@ def get_status_options() -> List[str]:
     ]
 
 def create_search_filters() -> Dict[str, Any]:
-    """Create enhanced search and filter controls."""
-    st.sidebar.subheader("🔍 Advanced Search & Filters")
+    """Create enhanced search and filter controls with semantic search."""
+    st.sidebar.subheader("🔍 Smart Search & Filters")
     
-    # Enhanced search box with clear functionality
-    search_text = create_enhanced_search_box(
-        placeholder="Enter item name, description, brand, or model...",
-        key="item_search",
-        help_text="Search in item names, descriptions, brands, and models"
+    # Semantic Search Toggle
+    semantic_enabled = st.sidebar.toggle(
+        "🧠 AI-Powered Search",
+        value=st.session_state.get("semantic_search_enabled", True),
+        help="Use artificial intelligence for natural language search (e.g., 'kitchen tools under $50')"
     )
+    st.session_state.semantic_search_enabled = semantic_enabled
+    
+    # Enhanced search box with semantic capabilities
+    if semantic_enabled:
+        search_placeholder = "Try natural language: 'blue electronics', 'camping gear in garage'..."
+        search_help = "AI-powered search understands natural language queries"
+    else:
+        search_placeholder = "Enter item name, description, brand, or model..."
+        search_help = "Traditional keyword search in item fields"
+    
+    search_text = create_enhanced_search_box(
+        placeholder=search_placeholder,
+        key="item_search",
+        help_text=search_help
+    )
+    
+    # Search mode indicator
+    if search_text:
+        search_mode = "🧠 Smart Search" if semantic_enabled else "📝 Keyword Search"
+        st.sidebar.caption(f"Using: {search_mode}")
     
     # Advanced search options
     with st.sidebar.expander("🔧 Search Options"):
-        case_sensitive = st.checkbox(
-            "Case sensitive search",
-            help="Enable case-sensitive search"
-        )
-        search_descriptions = st.checkbox(
-            "Include descriptions",
-            value=True,
-            help="Search in item descriptions"
-        )
-        search_notes = st.checkbox(
-            "Include notes",
-            help="Search in item notes"
-        )
+        if not semantic_enabled:
+            case_sensitive = st.checkbox(
+                "Case sensitive search",
+                help="Enable case-sensitive search"
+            )
+            search_descriptions = st.checkbox(
+                "Include descriptions",
+                value=True,
+                help="Search in item descriptions"
+            )
+            search_notes = st.checkbox(
+                "Include notes",
+                help="Search in item notes"
+            )
+        else:
+            # Semantic search options
+            certainty_threshold = st.slider(
+                "Search Sensitivity",
+                min_value=0.5,
+                max_value=1.0,
+                value=0.7,
+                step=0.05,
+                help="Higher values = more precise matches, lower values = more flexible matches"
+            )
+            st.session_state.semantic_certainty = certainty_threshold
     
     # Quick filter buttons
     st.sidebar.subheader("⚡ Quick Filters")
@@ -396,6 +428,84 @@ def display_item_details(item: Dict):
     else:
         st.info("No location information available for this item.")
 
+
+def show_similar_items(item: Dict):
+    """Display items similar to the selected item using semantic search."""
+    st.markdown(f"### Items Similar to '{item.get('name', 'Unknown')}'")
+    
+    api_client = APIClient()
+    
+    with st.spinner("Finding similar items using AI..."):
+        # Get similar items from semantic search
+        similar_result = safe_api_call(
+            lambda: api_client.get_similar_items(item.get('id'), limit=10),
+            error_message="Failed to find similar items",
+            silent=True
+        )
+        
+        if similar_result and similar_result.get("similar_items"):
+            similar_items = similar_result["similar_items"]
+            semantic_available = similar_result.get("semantic_available", False)
+            
+            if not semantic_available:
+                st.warning("⚠️ AI-powered similarity search is currently unavailable. Showing alternative suggestions.")
+            else:
+                st.success(f"🧠 Found {len(similar_items)} similar items using AI analysis")
+            
+            # Display similar items
+            for idx, similar_item in enumerate(similar_items):
+                item_data = similar_item.get("item_data", {})
+                score = similar_item.get("score", 0.0)
+                
+                with st.container(border=True):
+                    col1, col2, col3 = st.columns([3, 1, 1])
+                    
+                    with col1:
+                        st.subheader(item_data.get("name", "Unknown Item"))
+                        if item_data.get("description"):
+                            st.write(f"**Description:** {item_data['description']}")
+                        
+                        # Show key attributes
+                        attrs = []
+                        if item_data.get("item_type"):
+                            attrs.append(f"Type: {item_data['item_type'].replace('_', ' ').title()}")
+                        if item_data.get("brand"):
+                            attrs.append(f"Brand: {item_data['brand']}")
+                        if item_data.get("category_name"):
+                            attrs.append(f"Category: {item_data['category_name']}")
+                        
+                        if attrs:
+                            st.write(" • ".join(attrs))
+                    
+                    with col2:
+                        if semantic_available:
+                            similarity_pct = score * 100
+                            st.metric("Similarity", f"{similarity_pct:.0f}%")
+                        else:
+                            st.write("**Alternative**")
+                    
+                    with col3:
+                        if st.button(f"View Details", key=f"similar_detail_{item_data.get('id', idx)}"):
+                            # Get full item details
+                            try:
+                                full_item = api_client.get_item(item_data['id'])
+                                st.session_state.selected_item = full_item
+                                st.session_state.show_item_details = True
+                                st.session_state.show_similar_items = False
+                                if 'similar_to_item' in st.session_state:
+                                    del st.session_state.similar_to_item
+                                st.rerun()
+                            except:
+                                show_error("Failed to load item details")
+        else:
+            st.info("🤔 No similar items found. This might be a unique item!")
+            
+            # Suggest alternative search
+            if item.get("item_type"):
+                item_type = item["item_type"].replace("_", " ").title()
+                st.write(f"**Suggestion:** Try searching for other {item_type} items using the main search.")
+
+
 def show_items_page():
     """Main items page display."""
     # Page header
@@ -465,23 +575,94 @@ def show_items_page():
         # Fetch items data
         if 'items_cache' not in st.session_state:
             with st.spinner("Loading items..."):
-                # Build query parameters from filters
-                query_params = {}
-                if filters["search_text"]:
-                    query_params["search"] = filters["search_text"]
-                if filters["item_types"]:
-                    query_params["item_type"] = filters["item_types"][0]  # API supports single type
-                if filters["conditions"]:
-                    query_params["condition"] = filters["conditions"][0]  # API supports single condition
-                if filters["statuses"]:
-                    query_params["status"] = filters["statuses"][0]  # API supports single status
-                if filters["category_ids"]:
-                    query_params["category_id"] = filters["category_ids"][0]  # API supports single category
+                # Determine search type and build query
+                semantic_enabled = st.session_state.get("semantic_search_enabled", False)
+                search_text = filters["search_text"]
                 
-                items_data = safe_api_call(
-                    lambda: api_client.get_items_with_inventory(**query_params),
-                    error_message="Failed to load items data"
-                )
+                if semantic_enabled and search_text:
+                    # Use semantic search
+                    certainty = st.session_state.get("semantic_certainty", 0.7)
+                    
+                    # Build filters for hybrid search
+                    search_filters = {}
+                    if filters["item_types"]:
+                        search_filters["item_type"] = filters["item_types"][0]
+                    if filters["conditions"]:
+                        search_filters["condition"] = filters["conditions"][0]
+                    if filters["statuses"]:
+                        search_filters["status"] = filters["statuses"][0]
+                    if filters["category_ids"]:
+                        search_filters["category_id"] = filters["category_ids"][0]
+                    
+                    # Perform semantic/hybrid search
+                    search_result = safe_api_call(
+                        lambda: api_client.hybrid_search(
+                            query=search_text,
+                            filters=search_filters if search_filters else None,
+                            limit=100,
+                            certainty=certainty
+                        ),
+                        error_message="Failed to perform semantic search",
+                        silent=True
+                    )
+                    
+                    if search_result and search_result.get("results"):
+                        # Convert semantic search results to items format
+                        items_data = search_result["results"]
+                        
+                        # Add search metadata to session state
+                        st.session_state.search_metadata = {
+                            "search_type": search_result.get("search_type", "semantic"),
+                            "total_count": search_result.get("total_count", len(items_data)),
+                            "semantic_available": search_result.get("semantic_available", True),
+                            "query": search_text,
+                            "certainty": certainty
+                        }
+                        
+                        # Enrich with inventory data if needed
+                        for item in items_data:
+                            if "inventory_entries" not in item:
+                                try:
+                                    inventory_entries = api_client.get_inventory(item_id=item.get("id"))
+                                    item["inventory_entries"] = inventory_entries or []
+                                except:
+                                    item["inventory_entries"] = []
+                    else:
+                        # Fallback to traditional search if semantic search fails
+                        query_params = {"search": search_text, "limit": 100}
+                        items_data = safe_api_call(
+                            lambda: api_client.get_items_with_inventory(**query_params),
+                            error_message="Failed to load items data"
+                        )
+                        st.session_state.search_metadata = {
+                            "search_type": "traditional_fallback",
+                            "semantic_available": False,
+                            "query": search_text
+                        }
+                else:
+                    # Traditional search
+                    query_params = {}
+                    if search_text:
+                        query_params["search"] = search_text
+                    if filters["item_types"]:
+                        query_params["item_type"] = filters["item_types"][0]
+                    if filters["conditions"]:
+                        query_params["condition"] = filters["conditions"][0]
+                    if filters["statuses"]:
+                        query_params["status"] = filters["statuses"][0]
+                    if filters["category_ids"]:
+                        query_params["category_id"] = filters["category_ids"][0]
+                    
+                    items_data = safe_api_call(
+                        lambda: api_client.get_items_with_inventory(**query_params),
+                        error_message="Failed to load items data"
+                    )
+                    
+                    st.session_state.search_metadata = {
+                        "search_type": "traditional",
+                        "semantic_available": True,
+                        "query": search_text or ""
+                    }
                 
                 st.session_state.items_cache = items_data or []
         
@@ -532,7 +713,26 @@ def show_items_page():
             filtered_items = [item for item in filtered_items 
                             if len(item.get('inventory_entries', [])) > 1]
         
-        # Display results
+        # Display search metadata and results
+        search_metadata = st.session_state.get("search_metadata", {})
+        
+        if search_metadata and search_metadata.get("query"):
+            # Show search type and confidence
+            search_type = search_metadata.get("search_type", "traditional")
+            query = search_metadata.get("query", "")
+            
+            if search_type in ["semantic", "hybrid"]:
+                certainty = search_metadata.get("certainty", 0.7)
+                st.success(f"🧠 **AI Search Results** for '{query}' (confidence: {certainty:.0%})")
+                
+                if search_metadata.get("total_count", 0) > len(filtered_items):
+                    st.info(f"Showing {len(filtered_items)} of {search_metadata['total_count']} semantic matches after filtering")
+            elif search_type == "traditional_fallback":
+                st.warning(f"⚠️ **Fallback to Keyword Search** for '{query}' (AI search unavailable)")
+            elif search_type == "traditional":
+                if query:
+                    st.info(f"📝 **Keyword Search Results** for '{query}'")
+        
         st.markdown(f"**Found {len(filtered_items)} items**")
         
         if filtered_items:
@@ -608,9 +808,16 @@ def show_items_page():
                                     if item.get("current_value"):
                                         st.write(f"**Value:** {safe_currency_format(item['current_value'])}")
                                     
-                                    if st.button(f"View Details", key=f"view_{item.get('id')}"):
-                                        st.session_state.selected_item = item
-                                        st.session_state.show_item_details = True
+                                    col1, col2 = st.columns(2)
+                                    with col1:
+                                        if st.button("👁️ Details", key=f"view_{item.get('id')}"):
+                                            st.session_state.selected_item = item
+                                            st.session_state.show_item_details = True
+                                    
+                                    with col2:
+                                        if st.button("🔍 Similar", key=f"similar_{item.get('id')}"):
+                                            st.session_state.similar_to_item = item
+                                            st.session_state.show_similar_items = True
             
             elif display_mode == "Details":
                 # Detailed list view
@@ -650,6 +857,16 @@ def show_modals():
                 st.session_state.show_item_details = False
                 if 'selected_item' in st.session_state:
                     del st.session_state.selected_item
+                st.rerun()
+    
+    # Similar items modal
+    if st.session_state.get('show_similar_items', False) and st.session_state.get('similar_to_item'):
+        with st.expander("🔍 Similar Items", expanded=True):
+            show_similar_items(st.session_state.similar_to_item)
+            if st.button("Close Similar Items"):
+                st.session_state.show_similar_items = False
+                if 'similar_to_item' in st.session_state:
+                    del st.session_state.similar_to_item
                 st.rerun()
     
     # Inventory management modals

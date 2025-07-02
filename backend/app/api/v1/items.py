@@ -15,6 +15,7 @@ from datetime import datetime
 from app.database.base import get_session
 from app.models import Item, ItemType, ItemCondition, ItemStatus, Location, Category
 from app.services.inventory_service import InventoryService
+from app.services.item_service import ItemService
 from app.schemas import (
     ItemCreate, ItemCreateWithLocation, ItemUpdate, ItemResponse, ItemSummary, ItemSearch,
     ItemBulkUpdate, ItemMoveRequest, ItemStatusUpdate, ItemConditionUpdate,
@@ -216,28 +217,16 @@ async def create_item(
     item_data: ItemCreate,
     session: AsyncSession = Depends(get_session)
 ):
-    """Create a new item."""
+    """Create a new item with dual-write to PostgreSQL and Weaviate."""
     
-    # Create item
-    item = Item(**item_data.model_dump())
-    session.add(item)
-    await session.commit()
-    await session.refresh(item)
+    # Use ItemService for dual-write pattern
+    item_service = ItemService(session)
+    item = await item_service.create_item(item_data)
     
     logger.info(f"Created item: {item.name} (ID: {item.id})")
     
-    # Return simple item response for now
-    return {
-        "id": item.id,
-        "name": item.name,
-        "description": item.description,
-        "item_type": item.item_type,
-        "condition": item.condition,
-        "status": item.status,
-        "category_id": item.category_id,
-        "created_at": item.created_at,
-        "updated_at": item.updated_at
-    }
+    # Return enhanced item response
+    return enhance_item_response(item)
 
 
 @router.post("/with-location", status_code=201)
@@ -245,7 +234,7 @@ async def create_item_with_location(
     item_data: ItemCreateWithLocation,
     session: AsyncSession = Depends(get_session)
 ):
-    """Create a new item and assign it to a location via inventory service."""
+    """Create a new item and assign it to a location with dual-write to PostgreSQL and Weaviate."""
     
     # Validate location exists
     location_query = select(Location).where(Location.id == item_data.location_id)
@@ -279,53 +268,39 @@ async def create_item_with_location(
             )
     
     try:
-        # Create item (exclude location_id and quantity from item creation)
-        item_dict = item_data.model_dump(exclude={'location_id', 'quantity'})
-        item = Item(**item_dict)
-        session.add(item)
-        await session.commit()
-        await session.refresh(item)
+        # Use ItemService for dual-write pattern
+        item_service = ItemService(session)
         
-        logger.info(f"Created item: {item.name} (ID: {item.id})")
+        # Extract item data (exclude location_id and quantity)
+        item_create_data = ItemCreate(**item_data.model_dump(exclude={'location_id', 'quantity'}))
         
-        # Create inventory entry to assign item to location
-        inventory_service = InventoryService(session)
-        
-        from app.schemas.inventory import InventoryCreate
-        inventory_data = InventoryCreate(
-            item_id=item.id,
+        # Create item with location assignment
+        item = await item_service.create_item(
+            item_create_data,
             location_id=item_data.location_id,
             quantity=item_data.quantity
         )
         
-        inventory_entry = await inventory_service.create_inventory_entry(inventory_data)
-        
-        logger.info(f"Assigned item {item.name} (ID: {item.id}) to location {location.name} with quantity {item_data.quantity}")
+        logger.info(f"Created item with location: {item.name} (ID: {item.id}) at {location.name}")
         
         # Return enhanced response including location information
-        return {
-            "id": item.id,
-            "name": item.name,
-            "description": item.description,
-            "item_type": item.item_type,
-            "condition": item.condition,
-            "status": item.status,
-            "category_id": item.category_id,
-            "created_at": item.created_at,
-            "updated_at": item.updated_at,
-            "inventory": {
-                "id": inventory_entry.id,
+        response = enhance_item_response(item)
+        
+        # Add inventory information if available
+        if hasattr(item, 'inventory_entries') and item.inventory_entries:
+            entry = item.inventory_entries[0]  # Get first entry
+            response["inventory"] = {
+                "id": entry.id,
                 "location_id": item_data.location_id,
                 "location_name": location.name,
                 "quantity": item_data.quantity
             }
-        }
+        
+        return response
         
     except ValueError as e:
-        await session.rollback()
         raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
-        await session.rollback()
         logger.error(f"Error creating item with location: {str(e)}")
         raise HTTPException(status_code=500, detail="Internal server error")
 
@@ -379,11 +354,11 @@ async def search_items(
     search: ItemSearch,
     session: AsyncSession = Depends(get_session)
 ):
-    """Advanced item search with complex filtering."""
+    """Advanced item search with traditional PostgreSQL filtering."""
     
-    query = build_item_search_query(search, session)
-    result = await session.execute(query)
-    items = result.scalars().all()
+    # Use ItemService for consistent search
+    item_service = ItemService(session)
+    items = await item_service.search_items(search)
     
     return [enhance_item_response(item) for item in items]
 
@@ -393,12 +368,14 @@ async def get_item(
     item_id: int,
     session: AsyncSession = Depends(get_session)
 ):
-    """Get a specific item by ID."""
+    """Get a specific item by ID with full relationships."""
     
-    item = await get_item_by_id(item_id, session)
+    # Use ItemService to get item with full relationships
+    item_service = ItemService(session)
+    item = await item_service.get_item_by_id(item_id)
     
-    # Load relationships
-    await session.refresh(item, ["location", "category"])
+    if not item:
+        raise HTTPException(status_code=404, detail=f"Item with id {item_id} not found")
     
     return enhance_item_response(item)
 
@@ -409,12 +386,10 @@ async def update_item(
     item_data: ItemUpdate,
     session: AsyncSession = Depends(get_session)
 ):
-    """Update an existing item."""
-    
-    item = await get_item_by_id(item_id, session)
+    """Update an existing item with dual-write to PostgreSQL and Weaviate."""
     
     # Validate location if being updated
-    if item_data.location_id and item_data.location_id != item.location_id:
+    if item_data.location_id:
         location_query = select(Location).where(Location.id == item_data.location_id)
         location_result = await session.execute(location_query)
         location = location_result.scalar_one_or_none()
@@ -423,7 +398,7 @@ async def update_item(
             raise HTTPException(status_code=400, detail=f"Location with id {item_data.location_id} not found")
     
     # Validate category if being updated
-    if item_data.category_id and item_data.category_id != item.category_id:
+    if item_data.category_id:
         category_query = select(Category).where(Category.id == item_data.category_id)
         category_result = await session.execute(category_query)
         category = category_result.scalar_one_or_none()
@@ -432,7 +407,7 @@ async def update_item(
             raise HTTPException(status_code=400, detail=f"Category with id {item_data.category_id} not found")
     
     # Check for duplicate serial number (exclude current item)
-    if item_data.serial_number and item_data.serial_number != item.serial_number:
+    if item_data.serial_number:
         duplicate_serial_query = select(Item).where(
             and_(Item.serial_number == item_data.serial_number, Item.id != item_id)
         )
@@ -441,7 +416,7 @@ async def update_item(
             raise HTTPException(status_code=400, detail=f"Item with serial number '{item_data.serial_number}' already exists")
     
     # Check for duplicate barcode (exclude current item)
-    if item_data.barcode and item_data.barcode != item.barcode:
+    if item_data.barcode:
         duplicate_barcode_query = select(Item).where(
             and_(Item.barcode == item_data.barcode, Item.id != item_id)
         )
@@ -449,19 +424,20 @@ async def update_item(
         if duplicate_result.scalar_one_or_none():
             raise HTTPException(status_code=400, detail=f"Item with barcode '{item_data.barcode}' already exists")
     
-    # Update fields
-    update_data = item_data.model_dump(exclude_unset=True)
-    for field, value in update_data.items():
-        setattr(item, field, value)
-    
-    item.version += 1
-    session.add(item)
-    await session.commit()
-    await session.refresh(item)
-    
-    logger.info(f"Updated item: {item.name} (ID: {item.id})")
-    
-    return enhance_item_response(item)
+    try:
+        # Use ItemService for dual-write pattern
+        item_service = ItemService(session)
+        item = await item_service.update_item(item_id, item_data)
+        
+        logger.info(f"Updated item: {item.name} (ID: {item.id})")
+        
+        return enhance_item_response(item)
+        
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    except Exception as e:
+        logger.error(f"Error updating item {item_id}: {str(e)}")
+        raise HTTPException(status_code=500, detail="Internal server error")
 
 
 @router.delete("/{item_id}", status_code=204)
@@ -470,21 +446,24 @@ async def delete_item(
     permanent: bool = Query(False, description="Permanently delete (default is soft delete)"),
     session: AsyncSession = Depends(get_session)
 ):
-    """Delete an item (soft delete by default)."""
+    """Delete an item with removal from PostgreSQL and Weaviate."""
     
-    item = await get_item_by_id(item_id, session, include_inactive=True)
-    
-    if permanent:
-        # Permanent delete
-        await session.delete(item)
-        logger.info(f"Permanently deleted item: {item.name} (ID: {item.id})")
-    else:
-        # Soft delete
-        item.soft_delete("Deleted via API")
-        session.add(item)
-        logger.info(f"Soft deleted item: {item.name} (ID: {item.id})")
-    
-    await session.commit()
+    try:
+        # Use ItemService for dual-write pattern
+        item_service = ItemService(session)
+        success = await item_service.delete_item(item_id, soft_delete=not permanent)
+        
+        if success:
+            delete_type = "hard" if permanent else "soft"
+            logger.info(f"{delete_type.capitalize()} deleted item ID: {item_id}")
+        else:
+            raise HTTPException(status_code=500, detail="Failed to delete item")
+            
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    except Exception as e:
+        logger.error(f"Error deleting item {item_id}: {str(e)}")
+        raise HTTPException(status_code=500, detail="Internal server error")
 
 
 @router.post("/{item_id}/restore", response_model=ItemResponse)
@@ -816,3 +795,30 @@ async def get_item_statistics(
         items_with_serial=items_with_serial,
         items_with_barcode=items_with_barcode
     )
+
+
+@router.post("/sync-to-weaviate")
+async def sync_items_to_weaviate(
+    item_ids: Optional[List[int]] = None,
+    force_update: bool = Query(False, description="Force update existing embeddings"),
+    background_tasks: BackgroundTasks = BackgroundTasks(),
+    session: AsyncSession = Depends(get_session)
+):
+    """Sync items to Weaviate for semantic search (batch operation)."""
+    
+    item_service = ItemService(session)
+    
+    # Run sync operation in background for better UX
+    async def run_sync():
+        return await item_service.bulk_sync_to_weaviate(item_ids, force_update)
+    
+    background_tasks.add_task(run_sync)
+    
+    item_count = len(item_ids) if item_ids else "all active items"
+    logger.info(f"Initiated Weaviate sync for {item_count}")
+    
+    return {
+        "message": f"Sync initiated for {item_count}",
+        "force_update": force_update,
+        "status": "running"
+    }

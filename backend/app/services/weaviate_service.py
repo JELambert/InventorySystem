@@ -88,11 +88,16 @@ class WeaviateService:
     async def _connect(self) -> None:
         """Establish connection to Weaviate."""
         def _create_client():
+            # Weaviate v4 requires both HTTP and gRPC configuration
+            grpc_port = int(self.config.port) + 1 if self.config.port != "8080" else 50051
+            
             return weaviate.connect_to_custom(
                 http_host=self.config.host,
                 http_port=self.config.port,
                 http_secure=False,
-                timeout=weaviate.Timeout(query=self.config.timeout, insert=self.config.timeout)
+                grpc_host=self.config.host,
+                grpc_port=grpc_port,
+                grpc_secure=False
             )
         
         loop = asyncio.get_event_loop()

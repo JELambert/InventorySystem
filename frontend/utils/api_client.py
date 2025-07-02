@@ -1035,3 +1035,177 @@ class APIClient:
             List of categories (cached)
         """
         return self._make_request("GET", "performance/optimized/categories")
+    
+    # Semantic Search Methods
+    
+    def semantic_search(
+        self, 
+        query: str, 
+        limit: int = 50,
+        certainty: float = 0.7,
+        filters: Optional[dict] = None
+    ) -> dict:
+        """
+        Perform semantic search for items using natural language.
+        
+        Args:
+            query: Natural language search query
+            limit: Maximum number of results to return
+            certainty: Minimum similarity score (0.0 to 1.0)
+            filters: Optional traditional filters to apply
+            
+        Returns:
+            Dictionary with search results and metadata
+        """
+        search_data = {
+            "query": query,
+            "limit": limit,
+            "certainty": certainty
+        }
+        
+        if filters:
+            search_data["filters"] = filters
+        
+        try:
+            return self._make_request("POST", "search/semantic", data=search_data)
+        except APIError as e:
+            logger.warning(f"Semantic search failed: {e}")
+            # Fallback to traditional search if semantic search unavailable
+            fallback_data = {"search_text": query, "limit": limit}
+            if filters:
+                fallback_data.update(filters)
+            
+            traditional_results = self.search_items(fallback_data)
+            return {
+                "results": traditional_results,
+                "total_count": len(traditional_results),
+                "search_type": "traditional_fallback",
+                "semantic_available": False,
+                "query": query
+            }
+    
+    def hybrid_search(
+        self,
+        query: str,
+        filters: Optional[dict] = None,
+        limit: int = 50,
+        certainty: float = 0.7
+    ) -> dict:
+        """
+        Perform hybrid search combining semantic understanding with traditional filters.
+        
+        Args:
+            query: Natural language search query
+            filters: Traditional filters (category_id, location_id, etc.)
+            limit: Maximum number of results to return
+            certainty: Minimum semantic similarity score
+            
+        Returns:
+            Dictionary with hybrid search results
+        """
+        search_data = {
+            "query": query,
+            "limit": limit,
+            "certainty": certainty
+        }
+        
+        if filters:
+            search_data["filters"] = filters
+        
+        try:
+            return self._make_request("POST", "search/hybrid", data=search_data)
+        except APIError as e:
+            logger.warning(f"Hybrid search failed: {e}")
+            # Fallback to semantic search without filters
+            return self.semantic_search(query, limit=limit, certainty=certainty)
+    
+    def get_similar_items(self, item_id: int, limit: int = 5) -> dict:
+        """
+        Find items similar to the specified item.
+        
+        Args:
+            item_id: ID of the item to find similar items for
+            limit: Maximum number of similar items to return
+            
+        Returns:
+            Dictionary with similar items and similarity scores
+        """
+        try:
+            return self._make_request("GET", f"search/similar/{item_id}", params={"limit": limit})
+        except APIError as e:
+            logger.warning(f"Similar items search failed: {e}")
+            return {
+                "similar_items": [],
+                "total_count": 0,
+                "semantic_available": False,
+                "item_id": item_id
+            }
+    
+    def get_search_health(self) -> dict:
+        """
+        Check the health and availability of semantic search services.
+        
+        Returns:
+            Dictionary with search service health status
+        """
+        try:
+            return self._make_request("GET", "search/health")
+        except APIError as e:
+            logger.debug(f"Search health check failed: {e}")
+            return {
+                "status": "unavailable",
+                "weaviate_available": False,
+                "semantic_search": False,
+                "error": str(e)
+            }
+    
+    def batch_sync_to_weaviate(
+        self, 
+        item_ids: Optional[List[int]] = None,
+        force_update: bool = False
+    ) -> dict:
+        """
+        Trigger batch synchronization of items to Weaviate for semantic search.
+        
+        Args:
+            item_ids: Specific item IDs to sync (None for all items)
+            force_update: Whether to force update existing embeddings
+            
+        Returns:
+            Sync operation status and statistics
+        """
+        data = {"force_update": force_update}
+        if item_ids:
+            data["item_ids"] = item_ids
+        
+        try:
+            return self._make_request("POST", "items/sync-to-weaviate", data=data)
+        except APIError as e:
+            logger.warning(f"Batch sync to Weaviate failed: {e}")
+            return {
+                "status": "failed",
+                "message": "Weaviate sync unavailable",
+                "error": str(e)
+            }
+    
+    def search_suggestions(self, partial_query: str, limit: int = 5) -> List[str]:
+        """
+        Get search suggestions based on partial query input.
+        
+        Args:
+            partial_query: Partial search query
+            limit: Maximum number of suggestions
+            
+        Returns:
+            List of suggested search queries
+        """
+        try:
+            response = self._make_request(
+                "GET", 
+                "search/suggestions", 
+                params={"q": partial_query, "limit": limit}
+            )
+            return response.get("suggestions", [])
+        except APIError as e:
+            logger.debug(f"Search suggestions failed: {e}")
+            return []
