@@ -115,6 +115,18 @@ def create_search_filters() -> Dict[str, Any]:
             )
             st.session_state.semantic_certainty = certainty_threshold
     
+    # Debug Information (Development Mode)
+    if st.sidebar.checkbox("🐛 Debug Mode", help="Show technical details for troubleshooting"):
+        st.session_state.debug_mode = True
+        with st.sidebar.expander("🔍 Debug Info", expanded=True):
+            st.caption("**Search Configuration:**")
+            st.text(f"Mode: {'AI-powered' if semantic_enabled else 'Traditional'}")
+            st.text(f"Query: '{search_text}'")
+            if semantic_enabled:
+                st.text(f"Sensitivity: {st.session_state.get('semantic_certainty', 0.7):.0%}")
+    else:
+        st.session_state.debug_mode = False
+    
     # Quick filter buttons
     st.sidebar.subheader("⚡ Quick Filters")
     
@@ -252,15 +264,15 @@ def create_search_filters() -> Dict[str, Any]:
     )
     
     return {
-        "search_text": search_text,
+        "search_text": search_text or "",
         "case_sensitive": case_sensitive,
         "search_descriptions": search_descriptions,
         "search_notes": search_notes,
-        "item_types": selected_types or ([selected_filter] if selected_filter != 'all' else []),
-        "conditions": selected_conditions,
-        "statuses": selected_statuses,
-        "category_ids": selected_category_ids,
-        "location_ids": selected_location_ids,
+        "item_types": (selected_types or []) or ([selected_filter] if selected_filter != 'all' else []),
+        "conditions": selected_conditions or [],
+        "statuses": selected_statuses or [],
+        "category_ids": selected_category_ids or [],
+        "location_ids": selected_location_ids or [],
         "show_unassigned": show_unassigned,
         "show_multiple_locations": show_multiple_locations,
         "min_value": min_value if min_value > 0 else None,
@@ -292,7 +304,7 @@ def create_item_dataframe(items: List[Dict], show_inventory: bool = True) -> pd.
             "Category": item.get("category", {}).get("name", "") if item.get("category") else "",
             "Tags": item.get("tags", ""),
             "Serial Number": item.get("serial_number", ""),
-            "Description": item.get("description", "")[:100] + "..." if len(item.get("description", "")) > 100 else item.get("description", ""),
+            "Description": (item.get("description") or "")[:100] + "..." if len(item.get("description") or "") > 100 else (item.get("description") or ""),
         }
         
         # Add inventory information if requested
@@ -443,8 +455,7 @@ def show_similar_items(item: Dict):
         # Get similar items from semantic search
         similar_result = safe_api_call(
             lambda: api_client.get_similar_items(item.get('id'), limit=10),
-            error_message="Failed to find similar items",
-            silent=True
+            error_message="Failed to find similar items"
         )
         
         if similar_result and similar_result.get("similar_items"):
@@ -583,8 +594,7 @@ def show_items_page():
                 with st.spinner("Checking AI search system..."):
                     health_result = safe_api_call(
                         lambda: api_client.get_search_health(),
-                        error_message="Failed to check search health",
-                        silent=False
+                        error_message="Failed to check search health"
                     )
                 
                 if health_result:
@@ -655,16 +665,40 @@ Search Endpoints:
         # Get search filters
         filters = create_search_filters()
         
-        # Check if search mode changed - clear cache if so
+        # Create cache key based on search parameters to detect changes
         current_semantic_enabled = st.session_state.get("semantic_search_enabled", False)
+        search_text = filters["search_text"]
+        certainty = st.session_state.get("semantic_certainty", 0.7)
+        
+        # Create cache key including all search parameters
+        cache_key_parts = [
+            str(current_semantic_enabled),
+            search_text or "",
+            str(certainty),
+            str(sorted(filters.get("item_types", []))),
+            str(sorted(filters.get("conditions", []))),
+            str(sorted(filters.get("statuses", []))),
+            str(sorted(filters.get("category_ids", [])))
+        ]
+        current_cache_key = "|".join(cache_key_parts)
+        
+        # Check if search parameters changed - clear cache if so
+        last_cache_key = st.session_state.get("current_cache_key", None)
         last_semantic_enabled = st.session_state.get("last_semantic_enabled", None)
         
-        if last_semantic_enabled is not None and current_semantic_enabled != last_semantic_enabled:
-            # Search mode changed - clear cache
+        if (last_cache_key is not None and current_cache_key != last_cache_key) or \
+           (last_semantic_enabled is not None and current_semantic_enabled != last_semantic_enabled):
+            # Search parameters or mode changed - clear cache
             if 'items_cache' in st.session_state:
                 del st.session_state.items_cache
-            st.info(f"🔄 Search mode changed to {'AI-powered' if current_semantic_enabled else 'traditional'} - refreshing results")
+            
+            # Show appropriate message
+            if last_semantic_enabled is not None and current_semantic_enabled != last_semantic_enabled:
+                st.info(f"🔄 Search mode changed to {'AI-powered' if current_semantic_enabled else 'traditional'} - refreshing results")
+            elif search_text:
+                st.info(f"🔍 Search updated - finding results for: '{search_text}'")
         
+        st.session_state.current_cache_key = current_cache_key
         st.session_state.last_semantic_enabled = current_semantic_enabled
         
         # Fetch items data
@@ -674,51 +708,92 @@ Search Endpoints:
                 semantic_enabled = st.session_state.get("semantic_search_enabled", False)
                 search_text = filters["search_text"]
                 
-                if semantic_enabled and search_text:
-                    # Use semantic search
+                if semantic_enabled:
+                    # Use AI-powered search (semantic or hybrid depending on filters)
                     certainty = st.session_state.get("semantic_certainty", 0.7)
                     
-                    # Build filters for hybrid search
+                    # Build filters for hybrid search (with null safety)
                     search_filters = {}
-                    if filters["item_types"]:
-                        search_filters["item_type"] = filters["item_types"][0]
-                    if filters["conditions"]:
-                        search_filters["condition"] = filters["conditions"][0]
-                    if filters["statuses"]:
-                        search_filters["status"] = filters["statuses"][0]
-                    if filters["category_ids"]:
-                        search_filters["category_id"] = filters["category_ids"][0]
+                    item_types = filters.get("item_types") or []
+                    if item_types:
+                        search_filters["item_type"] = item_types[0]
+                    conditions = filters.get("conditions") or []
+                    if conditions:
+                        search_filters["condition"] = conditions[0]
+                    statuses = filters.get("statuses") or []
+                    if statuses:
+                        search_filters["status"] = statuses[0]
+                    category_ids = filters.get("category_ids") or []
+                    if category_ids:
+                        search_filters["category_id"] = category_ids[0]
                     
-                    # Perform semantic/hybrid search
-                    st.info(f"🧠 Performing AI search for: '{search_text}' (sensitivity: {certainty:.0%})")
+                    # Use search text or wildcard for "find all" semantic search
+                    query = search_text if search_text else "*"
                     
-                    search_result = safe_api_call(
-                        lambda: api_client.hybrid_search(
-                            query=search_text,
-                            filters=search_filters if search_filters else None,
-                            limit=100,
-                            certainty=certainty
-                        ),
-                        error_message="❌ Semantic search API failed - falling back to traditional search",
-                        silent=False  # Show errors to help debug
-                    )
+                    # Choose appropriate API call based on filters
+                    if search_filters:
+                        # Use hybrid search when filters are applied
+                        st.info(f"🧠 Performing AI hybrid search for: '{query}' with filters (sensitivity: {certainty:.0%})")
+                        search_result = safe_api_call(
+                            lambda: api_client.hybrid_search(
+                                query=query,
+                                filters=search_filters,
+                                limit=100,
+                                certainty=certainty
+                            ),
+                            error_message="❌ Hybrid search API failed - falling back to traditional search"
+                        )
+                    else:
+                        # Use pure semantic search when no filters
+                        st.info(f"🧠 Performing AI semantic search for: '{query}' (sensitivity: {certainty:.0%})")
+                        search_result = safe_api_call(
+                            lambda: api_client.semantic_search(
+                                query=query,
+                                limit=100,
+                                certainty=certainty
+                            ),
+                            error_message="❌ Semantic search API failed - falling back to traditional search"
+                        )
                     
-                    if search_result and search_result.get("results"):
-                        # Convert semantic search results to items format
-                        items_data = search_result["results"]
+                    if search_result and isinstance(search_result, dict) and search_result.get("results"):
+                        # Extract item data from semantic search results (handles nested .item structure)
+                        items_data = []
+                        results = search_result.get("results", [])
+                        
+                        for result in results:
+                            if isinstance(result, dict) and "item" in result:
+                                # Semantic search result format: {"item": {...}, "score": 0.8, "match_type": "semantic"}
+                                item_data = result["item"]
+                                # Add semantic search metadata to item for display
+                                if "score" in result:
+                                    item_data["_semantic_score"] = result["score"]
+                                if "match_type" in result:
+                                    item_data["_match_type"] = result["match_type"]
+                                items_data.append(item_data)
+                            else:
+                                # Traditional search result format (direct item object)
+                                items_data.append(result)
                         
                         # Add search metadata to session state
                         st.session_state.search_metadata = {
-                            "search_type": search_result.get("search_type", "semantic"),
-                            "total_count": search_result.get("total_count", len(items_data)),
-                            "semantic_available": search_result.get("semantic_available", True),
-                            "query": search_text,
-                            "certainty": certainty
+                            "search_type": "semantic" if not search_filters else "hybrid",
+                            "total_results": search_result.get("total_results", len(items_data) if items_data else 0),
+                            "semantic_enabled": search_result.get("semantic_enabled", True),
+                            "fallback_used": search_result.get("fallback_used", False),
+                            "search_time_ms": search_result.get("search_time_ms", 0),
+                            "query": query,
+                            "certainty": certainty,
+                            "api_response_keys": list(search_result.keys()) if search_result else []
                         }
                         
+                        # Debug information
+                        if st.session_state.get("debug_mode"):
+                            st.success(f"✅ Search completed: {len(items_data) if items_data else 0} items found")
+                            st.info(f"📊 API Response: {st.session_state.search_metadata}")
+                        
                         # Enrich with inventory data if needed
-                        for item in items_data:
-                            if "inventory_entries" not in item:
+                        for item in (items_data or []):
+                            if "inventory_entries" not in item or item.get("inventory_entries") is None:
                                 try:
                                     inventory_entries = api_client.get_inventory(item_id=item.get("id"))
                                     item["inventory_entries"] = inventory_entries or []
@@ -745,29 +820,42 @@ Search Endpoints:
                             lambda: api_client.get_items_with_inventory(**query_params),
                             error_message="Failed to load items data"
                         )
+                        
+                        # Ensure items_data is a list even if API call failed
+                        if items_data is None:
+                            items_data = []
+                            
                         st.session_state.search_metadata = {
                             "search_type": "traditional_fallback",
                             "semantic_available": False,
-                            "query": search_text
+                            "query": search_text or ""
                         }
                 else:
-                    # Traditional search
+                    # Traditional search (with null safety)
                     query_params = {}
                     if search_text:
                         query_params["search"] = search_text
-                    if filters["item_types"]:
-                        query_params["item_type"] = filters["item_types"][0]
-                    if filters["conditions"]:
-                        query_params["condition"] = filters["conditions"][0]
-                    if filters["statuses"]:
-                        query_params["status"] = filters["statuses"][0]
-                    if filters["category_ids"]:
-                        query_params["category_id"] = filters["category_ids"][0]
+                    item_types = filters.get("item_types") or []
+                    if item_types:
+                        query_params["item_type"] = item_types[0]
+                    conditions = filters.get("conditions") or []
+                    if conditions:
+                        query_params["condition"] = conditions[0]
+                    statuses = filters.get("statuses") or []
+                    if statuses:
+                        query_params["status"] = statuses[0]
+                    category_ids = filters.get("category_ids") or []
+                    if category_ids:
+                        query_params["category_id"] = category_ids[0]
                     
                     items_data = safe_api_call(
                         lambda: api_client.get_items_with_inventory(**query_params),
                         error_message="Failed to load items data"
                     )
+                    
+                    # Ensure items_data is a list even if API call failed
+                    if items_data is None:
+                        items_data = []
                     
                     st.session_state.search_metadata = {
                         "search_type": "traditional",
@@ -780,22 +868,35 @@ Search Endpoints:
         items = st.session_state.items_cache
         
         # Apply client-side filters (for filters not supported by API)
-        filtered_items = items
+        try:
+            filtered_items = items or []
+        except Exception as e:
+            st.error(f"Debug: Error with items assignment: {e}")
+            filtered_items = []
         
-        # Filter by multiple types/conditions/statuses if specified
-        if len(filters["item_types"]) > 1:
-            filtered_items = [item for item in filtered_items if item.get("item_type") in filters["item_types"]]
-        
-        if len(filters["conditions"]) > 1:
-            filtered_items = [item for item in filtered_items if item.get("condition") in filters["conditions"]]
-        
-        if len(filters["statuses"]) > 1:
-            filtered_items = [item for item in filtered_items if item.get("status") in filters["statuses"]]
-        
-        # Filter by multiple categories
-        if len(filters["category_ids"]) > 1:
-            filtered_items = [item for item in filtered_items 
-                            if item.get("category", {}).get("id") in filters["category_ids"]]
+        # Filter by multiple types/conditions/statuses if specified (with null safety)
+        try:
+            item_types = filters.get("item_types") or []
+            if len(item_types) > 1:
+                filtered_items = [item for item in filtered_items if item.get("item_type") in item_types]
+            
+            conditions = filters.get("conditions") or []
+            if len(conditions) > 1:
+                filtered_items = [item for item in filtered_items if item.get("condition") in conditions]
+            
+            statuses = filters.get("statuses") or []
+            if len(statuses) > 1:
+                filtered_items = [item for item in filtered_items if item.get("status") in statuses]
+            
+            # Filter by multiple categories
+            category_ids = filters.get("category_ids") or []
+            if len(category_ids) > 1:
+                filtered_items = [item for item in filtered_items 
+                                if item.get("category", {}).get("id") in category_ids]
+        except Exception as e:
+            st.error(f"Debug: Error in filter processing: {e}")
+            st.error(f"Debug: filters = {filters}")
+            filtered_items = filtered_items or []
         
         # Filter by value range
         if filters["min_value"] is not None or filters["max_value"] is not None:
@@ -815,14 +916,30 @@ Search Endpoints:
                                   for entry in item.get('inventory_entries', []))]
         
         # Filter items without location assignments
-        if filters["show_unassigned"]:
-            filtered_items = [item for item in filtered_items 
-                            if not item.get('inventory_entries', [])]
-        
-        # Filter items in multiple locations
-        if filters["show_multiple_locations"]:
-            filtered_items = [item for item in filtered_items 
-                            if len(item.get('inventory_entries', [])) > 1]
+        try:
+            if filters["show_unassigned"]:
+                filtered_items = [item for item in filtered_items 
+                                if not item.get('inventory_entries', [])]
+            
+            # Filter items in multiple locations
+            if filters["show_multiple_locations"]:
+                # Add extra safety for inventory_entries len() call
+                safe_filtered_items = []
+                for item in filtered_items:
+                    try:
+                        inventory_entries = item.get('inventory_entries')
+                        if inventory_entries is None:
+                            inventory_entries = []
+                        if len(inventory_entries) > 1:
+                            safe_filtered_items.append(item)
+                    except Exception as inner_e:
+                        st.error(f"Debug: Error processing item {item.get('id', 'unknown')}: {inner_e}")
+                        # Include item in results to avoid hiding it due to processing error
+                        safe_filtered_items.append(item)
+                filtered_items = safe_filtered_items
+        except Exception as e:
+            st.error(f"Debug: Error in location filtering: {e}")
+            # Keep original filtered_items if location filtering fails
         
         # Display search metadata and results
         search_metadata = st.session_state.get("search_metadata", {})
@@ -904,17 +1021,21 @@ Search Endpoints:
                                     st.write(f"**Type:** {item.get('item_type', '').replace('_', ' ').title()}")
                                     st.write(f"**Status:** {item.get('status', '').replace('_', ' ').title()}")
                                     
-                                    # Show inventory information
-                                    inventory_entries = item.get("inventory_entries", [])
-                                    if inventory_entries:
-                                        total_qty = sum(entry.get('quantity', 1) for entry in inventory_entries)
-                                        if len(inventory_entries) == 1:
-                                            location_name = inventory_entries[0].get('location', {}).get('name', 'Unknown')
-                                            st.write(f"**Location:** {location_name} (Qty: {total_qty})")
+                                    # Show inventory information with debugging
+                                    try:
+                                        inventory_entries = item.get("inventory_entries") or []
+                                        if inventory_entries:
+                                            total_qty = sum(entry.get('quantity', 1) for entry in inventory_entries)
+                                            if len(inventory_entries) == 1:
+                                                location_name = inventory_entries[0].get('location', {}).get('name', 'Unknown')
+                                                st.write(f"**Location:** {location_name} (Qty: {total_qty})")
+                                            else:
+                                                st.write(f"**Locations:** {len(inventory_entries)} locations (Total: {total_qty})")
                                         else:
-                                            st.write(f"**Locations:** {len(inventory_entries)} locations (Total: {total_qty})")
-                                    else:
-                                        st.write("**Location:** Not assigned")
+                                            st.write("**Location:** Not assigned")
+                                    except Exception as inventory_error:
+                                        st.error(f"Debug: Error displaying inventory for item {item.get('id', 'unknown')}: {inventory_error}")
+                                        st.write("**Location:** Error loading location data")
                                     
                                     if item.get("current_value"):
                                         st.write(f"**Value:** {safe_currency_format(item['current_value'])}")
