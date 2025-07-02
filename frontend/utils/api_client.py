@@ -142,7 +142,11 @@ class APIClient:
                 # Add correlation ID to headers
                 headers = {'X-Correlation-ID': correlation_id}
                 
-                logger.debug(f"Making {method} request to {url} [ID: {correlation_id}]")
+                logger.info(f"API Request: {method} {url} [ID: {correlation_id}]")
+                if data:
+                    logger.debug(f"Request data: {data}")
+                if params:
+                    logger.debug(f"Request params: {params}")
                 
                 if method.upper() == "GET":
                     response = self.session.get(url, params=params, timeout=timeout, headers=headers)
@@ -1071,11 +1075,23 @@ class APIClient:
         except APIError as e:
             logger.warning(f"Semantic search failed: {e}")
             # Fallback to traditional search if semantic search unavailable
-            fallback_data = {"search_text": query, "limit": limit}
-            if filters:
-                fallback_data.update(filters)
             
-            traditional_results = self.search_items(fallback_data)
+            # Use get_items API with proper search parameter instead of search_items
+            query_params = {"limit": limit}
+            if query:
+                query_params["search"] = query
+            if filters:
+                # Map semantic search filters to API parameters
+                if filters.get("item_type"):
+                    query_params["item_type"] = filters["item_type"]
+                if filters.get("condition"):
+                    query_params["condition"] = filters["condition"]
+                if filters.get("status"):
+                    query_params["status"] = filters["status"]
+                if filters.get("category_id"):
+                    query_params["category_id"] = filters["category_id"]
+            
+            traditional_results = self.get_items(**query_params)
             return {
                 "results": traditional_results,
                 "total_count": len(traditional_results),

@@ -548,7 +548,8 @@ def show_items_page():
                 st.session_state.show_statistics = True
         
         with action_col5:
-            show_keyboard_shortcuts_help()
+            if st.button("🔍 AI Status", help="Check semantic search availability"):
+                st.session_state.show_search_health = True
         
         # Statistics modal
         if st.session_state.get('show_statistics', False):
@@ -573,8 +574,98 @@ def show_items_page():
                     st.session_state.show_statistics = False
                     st.rerun()
         
+        # Search health check modal
+        if st.session_state.get('show_search_health', False):
+            with st.expander("🔍 AI Search System Status", expanded=True):
+                st.markdown("### Semantic Search Health Check")
+                
+                # Test API connectivity
+                with st.spinner("Checking AI search system..."):
+                    health_result = safe_api_call(
+                        lambda: api_client.get_search_health(),
+                        error_message="Failed to check search health",
+                        silent=False
+                    )
+                
+                if health_result:
+                    status = health_result.get("status", "unknown")
+                    weaviate_available = health_result.get("weaviate_available", False)
+                    semantic_search = health_result.get("semantic_search", False)
+                    
+                    if status == "healthy" and weaviate_available:
+                        st.success("✅ AI search system is fully operational!")
+                        st.info(f"🧠 Weaviate: Connected\n🔗 Semantic Search: Available")
+                    elif status == "partial":
+                        st.warning("⚠️ AI search system is partially available")
+                        st.info(f"🧠 Weaviate: {'Connected' if weaviate_available else 'Disconnected'}\n🔗 Semantic Search: {'Available' if semantic_search else 'Unavailable'}")
+                    else:
+                        st.error("❌ AI search system is unavailable")
+                        st.info("💡 Falling back to traditional keyword search")
+                        
+                        if "error" in health_result:
+                            st.error(f"Error details: {health_result['error']}")
+                else:
+                    st.error("❌ Unable to check AI search system status")
+                    st.info("This likely means the backend search endpoints are not accessible")
+                
+                # Show backend endpoint info
+                st.markdown("### Debug Information")
+                st.code(f"""
+Backend API: {api_client.base_url}
+Search Endpoints:
+- /api/v1/search/semantic
+- /api/v1/search/hybrid  
+- /api/v1/search/health
+- /api/v1/search/similar/{{item_id}}
+                """)
+                
+                # Test basic connectivity
+                st.markdown("### Connectivity Test")
+                col1, col2 = st.columns(2)
+                
+                with col1:
+                    if st.button("🏥 Test Backend Health"):
+                        with st.spinner("Testing backend..."):
+                            try:
+                                response = api_client._make_request("GET", "")
+                                if response:
+                                    st.success("✅ Backend is accessible")
+                                else:
+                                    st.error("❌ Backend not responding")
+                            except Exception as e:
+                                st.error(f"❌ Backend error: {e}")
+                
+                with col2:
+                    if st.button("🔍 Test Search Endpoint"):
+                        with st.spinner("Testing search endpoint..."):
+                            try:
+                                test_result = api_client.get_search_health()
+                                if test_result:
+                                    st.success("✅ Search endpoint accessible")
+                                    st.json(test_result)
+                                else:
+                                    st.error("❌ Search endpoint not accessible")
+                            except Exception as e:
+                                st.error(f"❌ Search endpoint error: {e}")
+                
+                if st.button("Close Health Check"):
+                    st.session_state.show_search_health = False
+                    st.rerun()
+        
         # Get search filters
         filters = create_search_filters()
+        
+        # Check if search mode changed - clear cache if so
+        current_semantic_enabled = st.session_state.get("semantic_search_enabled", False)
+        last_semantic_enabled = st.session_state.get("last_semantic_enabled", None)
+        
+        if last_semantic_enabled is not None and current_semantic_enabled != last_semantic_enabled:
+            # Search mode changed - clear cache
+            if 'items_cache' in st.session_state:
+                del st.session_state.items_cache
+            st.info(f"🔄 Search mode changed to {'AI-powered' if current_semantic_enabled else 'traditional'} - refreshing results")
+        
+        st.session_state.last_semantic_enabled = current_semantic_enabled
         
         # Fetch items data
         if 'items_cache' not in st.session_state:
@@ -599,6 +690,8 @@ def show_items_page():
                         search_filters["category_id"] = filters["category_ids"][0]
                     
                     # Perform semantic/hybrid search
+                    st.info(f"🧠 Performing AI search for: '{search_text}' (sensitivity: {certainty:.0%})")
+                    
                     search_result = safe_api_call(
                         lambda: api_client.hybrid_search(
                             query=search_text,
@@ -606,8 +699,8 @@ def show_items_page():
                             limit=100,
                             certainty=certainty
                         ),
-                        error_message="Failed to perform semantic search",
-                        silent=True
+                        error_message="❌ Semantic search API failed - falling back to traditional search",
+                        silent=False  # Show errors to help debug
                     )
                     
                     if search_result and search_result.get("results"):
@@ -633,7 +726,21 @@ def show_items_page():
                                     item["inventory_entries"] = []
                     else:
                         # Fallback to traditional search if semantic search fails
-                        query_params = {"search": search_text, "limit": 100}
+                        st.warning("⚠️ AI search unavailable - using traditional keyword search")
+                        
+                        # Build proper query params for traditional search
+                        query_params = {"limit": 100}
+                        if search_text:
+                            query_params["search"] = search_text
+                        if search_filters.get("item_type"):
+                            query_params["item_type"] = search_filters["item_type"]
+                        if search_filters.get("condition"):
+                            query_params["condition"] = search_filters["condition"]
+                        if search_filters.get("status"):
+                            query_params["status"] = search_filters["status"]
+                        if search_filters.get("category_id"):
+                            query_params["category_id"] = search_filters["category_id"]
+                        
                         items_data = safe_api_call(
                             lambda: api_client.get_items_with_inventory(**query_params),
                             error_message="Failed to load items data"
