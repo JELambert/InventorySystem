@@ -47,7 +47,17 @@ from .item import (
     ItemHistoryEntry,
     ItemImportRequest,
     ItemImportResult,
-    ItemExportRequest
+    ItemExportRequest,
+    # Semantic search schemas
+    SemanticSearchRequest,
+    HybridSearchRequest,
+    SemanticSearchResult,
+    SemanticSearchResponse,
+    SimilarItemsRequest,
+    SimilarItemsResponse,
+    WeaviateHealthResponse,
+    EmbeddingBatchRequest,
+    EmbeddingBatchResponse
 )
 
 # Inventory schemas
@@ -104,6 +114,16 @@ __all__ = [
     "ItemImportRequest",
     "ItemImportResult",
     "ItemExportRequest",
+    # Semantic search schemas
+    "SemanticSearchRequest",
+    "HybridSearchRequest", 
+    "SemanticSearchResult",
+    "SemanticSearchResponse",
+    "SimilarItemsRequest",
+    "SimilarItemsResponse",
+    "WeaviateHealthResponse",
+    "EmbeddingBatchRequest",
+    "EmbeddingBatchResponse",
     
     # Inventory schemas
     "InventoryBase",

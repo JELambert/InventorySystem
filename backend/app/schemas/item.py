@@ -320,3 +320,85 @@ class ItemExportRequest(BaseModel):
     filters: Optional[ItemSearch] = Field(None, description="Optional filters to apply")
     include_inactive: bool = Field(False, description="Include inactive (soft-deleted) items")
     include_computed_fields: bool = Field(True, description="Include computed fields in export")
+
+
+# Semantic Search Schemas
+
+class SemanticSearchRequest(BaseModel):
+    """Schema for semantic search requests."""
+    
+    query: str = Field(..., min_length=1, max_length=500, description="Natural language search query")
+    limit: int = Field(50, ge=1, le=100, description="Maximum number of results to return")
+    certainty: float = Field(0.7, ge=0.1, le=1.0, description="Minimum certainty threshold for results")
+    include_scores: bool = Field(True, description="Include similarity scores in response")
+
+
+class HybridSearchRequest(BaseModel):
+    """Schema for hybrid semantic + traditional search requests."""
+    
+    query: str = Field(..., min_length=1, max_length=500, description="Natural language search query")
+    filters: Optional[ItemSearch] = Field(None, description="Traditional filters to apply")
+    limit: int = Field(50, ge=1, le=100, description="Maximum number of results to return")
+    certainty: float = Field(0.7, ge=0.1, le=1.0, description="Minimum certainty threshold for semantic results")
+    semantic_weight: float = Field(0.7, ge=0.0, le=1.0, description="Weight for semantic vs traditional search")
+
+
+class SemanticSearchResult(BaseModel):
+    """Schema for individual semantic search result."""
+    
+    item: ItemResponse = Field(..., description="Item details")
+    score: float = Field(..., description="Semantic similarity score")
+    match_type: str = Field(..., description="Type of match (semantic, traditional, hybrid)")
+
+
+class SemanticSearchResponse(BaseModel):
+    """Schema for semantic search response."""
+    
+    query: str = Field(..., description="Original search query")
+    results: List[SemanticSearchResult] = Field(default_factory=list, description="Search results")
+    total_results: int = Field(0, description="Total number of results found")
+    search_time_ms: float = Field(0.0, description="Search execution time in milliseconds")
+    semantic_enabled: bool = Field(True, description="Whether semantic search was used")
+    fallback_used: bool = Field(False, description="Whether fallback to traditional search was used")
+
+
+class SimilarItemsRequest(BaseModel):
+    """Schema for finding similar items."""
+    
+    item_id: int = Field(..., ge=1, description="ID of the item to find similarities for")
+    limit: int = Field(5, ge=1, le=20, description="Maximum number of similar items to return")
+
+
+class SimilarItemsResponse(BaseModel):
+    """Schema for similar items response."""
+    
+    source_item: ItemResponse = Field(..., description="The source item")
+    similar_items: List[SemanticSearchResult] = Field(default_factory=list, description="Similar items")
+    total_found: int = Field(0, description="Total number of similar items found")
+
+
+class WeaviateHealthResponse(BaseModel):
+    """Schema for Weaviate health check response."""
+    
+    status: str = Field(..., description="Weaviate service status")
+    item_count: int = Field(0, description="Number of items in vector database")
+    embedding_model: str = Field("", description="Current embedding model")
+    weaviate_url: str = Field("", description="Weaviate instance URL")
+    last_sync: Optional[datetime] = Field(None, description="Last successful sync timestamp")
+
+
+class EmbeddingBatchRequest(BaseModel):
+    """Schema for batch embedding creation."""
+    
+    item_ids: List[int] = Field(..., min_length=1, description="List of item IDs to create embeddings for")
+    force_update: bool = Field(False, description="Force update existing embeddings")
+
+
+class EmbeddingBatchResponse(BaseModel):
+    """Schema for batch embedding response."""
+    
+    success_count: int = Field(0, description="Number of embeddings created successfully")
+    failed_count: int = Field(0, description="Number of embeddings that failed")
+    skipped_count: int = Field(0, description="Number of embeddings skipped")
+    total_processed: int = Field(0, description="Total number of items processed")
+    errors: List[str] = Field(default_factory=list, description="Error messages for failed embeddings")
