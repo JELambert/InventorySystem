@@ -100,7 +100,11 @@ def create_search_filters() -> Dict[str, Any]:
                 help="Search in item notes"
             )
         else:
-            # Semantic search options
+            # Semantic search options - set default values for traditional search variables
+            case_sensitive = False
+            search_descriptions = True
+            search_notes = False
+            
             certainty_threshold = st.slider(
                 "Search Sensitivity",
                 min_value=0.5,
