@@ -79,18 +79,25 @@ def _convert_item_to_response(item: Item) -> ItemResponse:
 
 @router.get("/health", response_model=WeaviateHealthResponse)
 async def get_search_health(
+    session: AsyncSession = Depends(get_session),
     weaviate_service: WeaviateService = Depends(get_weaviate_service)
 ):
     """Get health status of semantic search services."""
     try:
         stats = await weaviate_service.get_stats()
         
+        # Get last sync time from most recent item update
+        from sqlalchemy import select, func
+        last_sync_query = select(func.max(Item.updated_at))
+        last_sync_result = await session.execute(last_sync_query)
+        last_sync_time = last_sync_result.scalar()
+        
         return WeaviateHealthResponse(
             status=stats.get("status", "unknown"),
             item_count=stats.get("item_count", 0),
             embedding_model=stats.get("embedding_model", ""),
             weaviate_url=stats.get("weaviate_url", ""),
-            last_sync=None  # TODO: Implement sync tracking
+            last_sync=last_sync_time
         )
         
     except Exception as e:

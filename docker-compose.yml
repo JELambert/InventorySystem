@@ -44,7 +44,7 @@ services:
     environment:
       POSTGRES_DB: inventory
       POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: vaultlock1
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-changeme}
     ports:
       - "5432:5432"
     volumes:

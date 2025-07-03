@@ -2,7 +2,7 @@
 
 from typing import Optional
 from datetime import datetime
-from pydantic import BaseModel, Field, validator
+from pydantic import BaseModel, Field, field_validator, ConfigDict
 import re
 
 
@@ -13,15 +13,17 @@ class CategoryBase(BaseModel):
     description: Optional[str] = Field(None, max_length=500, description="Category description")
     color: Optional[str] = Field(None, description="Category color in hex format (#RRGGBB)")
     
-    @validator('name')
-    def validate_name(cls, v):
+    @field_validator('name')
+    @classmethod
+    def validate_name(cls, v: str) -> str:
         """Validate category name."""
         if not v or not v.strip():
             raise ValueError('Category name cannot be empty')
         return v.strip()
     
-    @validator('color')
-    def validate_color(cls, v):
+    @field_validator('color')
+    @classmethod
+    def validate_color(cls, v: Optional[str]) -> Optional[str]:
         """Validate color is in proper hex format."""
         if v is None:
             return v
@@ -30,8 +32,9 @@ class CategoryBase(BaseModel):
             raise ValueError('Color must be in hex format (#RRGGBB)')
         return v.upper()
     
-    @validator('description')
-    def validate_description(cls, v):
+    @field_validator('description')
+    @classmethod
+    def validate_description(cls, v: Optional[str]) -> Optional[str]:
         """Validate and clean description."""
         if v is not None:
             v = v.strip()
@@ -52,8 +55,9 @@ class CategoryUpdate(BaseModel):
     description: Optional[str] = Field(None, max_length=500, description="Category description")
     color: Optional[str] = Field(None, description="Category color in hex format (#RRGGBB)")
     
-    @validator('name')
-    def validate_name(cls, v):
+    @field_validator('name')
+    @classmethod
+    def validate_name(cls, v: Optional[str]) -> Optional[str]:
         """Validate category name."""
         if v is not None and (not v or not v.strip()):
             raise ValueError('Category name cannot be empty')
@@ -61,8 +65,9 @@ class CategoryUpdate(BaseModel):
             v = v.strip()
         return v
     
-    @validator('color')
-    def validate_color(cls, v):
+    @field_validator('color')
+    @classmethod
+    def validate_color(cls, v: Optional[str]) -> Optional[str]:
         """Validate color is in proper hex format."""
         if v is None:
             return v
@@ -71,8 +76,9 @@ class CategoryUpdate(BaseModel):
             raise ValueError('Color must be in hex format (#RRGGBB)')
         return v.upper()
     
-    @validator('description')
-    def validate_description(cls, v):
+    @field_validator('description')
+    @classmethod
+    def validate_description(cls, v: Optional[str]) -> Optional[str]:
         """Validate and clean description."""
         if v is not None:
             v = v.strip()
@@ -89,8 +95,7 @@ class CategoryResponse(CategoryBase):
     updated_at: datetime = Field(..., description="Last update timestamp")
     is_active: bool = Field(..., description="Active status flag")
     
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class CategoryListResponse(BaseModel):
@@ -102,8 +107,7 @@ class CategoryListResponse(BaseModel):
     per_page: int = Field(..., description="Items per page")
     pages: int = Field(..., description="Total number of pages")
     
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class CategoryStats(BaseModel):
@@ -113,8 +117,7 @@ class CategoryStats(BaseModel):
     inactive_categories: int = Field(..., description="Number of inactive categories")
     most_used_color: Optional[str] = Field(None, description="Most commonly used color")
     
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class CategorySummary(BaseModel):
@@ -127,8 +130,7 @@ class CategorySummary(BaseModel):
     item_count: int = Field(0, description="Number of items in this category")
     location_count: int = Field(0, description="Number of locations using this category")
     
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class CategorySearch(BaseModel):

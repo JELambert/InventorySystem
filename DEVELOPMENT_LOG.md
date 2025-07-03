@@ -8,6 +8,137 @@
 
 ## Completed Tasks
 
+### ✅ Phase 2.4: Performance Optimizations and Warning Fixes
+**Completed**: 2025-07-03  
+**Duration**: ~1.5 hours  
+**Status**: COMPLETE - All Technical Debt Resolved
+
+#### What Was Built
+
+**🚀 Performance Improvements**
+- **Database Indexes**: Created migration with 12 performance indexes
+  - Items table: name, created_at, item_type, status, brand, barcode
+  - Inventory: composite index on (item_id, location_id)
+  - Movement history: timestamp and (item_id, timestamp) indexes
+  - Categories: name and is_active indexes
+- **Query Optimization**: Indexes target frequent query patterns identified in query_optimizer.py
+
+**⚠️ Warning Fixes**
+- **Pydantic V2 Migration**: Updated all validators in category.py
+  - Converted @validator to @field_validator
+  - Changed class Config to model_config = ConfigDict
+  - Added proper type hints and @classmethod decorators
+- **Fixed TODO**: Implemented sync tracking in search.py using last item update time
+
+**🔒 Additional Security**
+- **Docker Compose**: Removed hardcoded PostgreSQL password
+  - Now uses environment variable with fallback: ${POSTGRES_PASSWORD:-changeme}
+
+#### Challenges Faced
+
+**Pydantic Migration**
+- **Challenge**: Different validator patterns between V1 and V2
+- **Solution**: Used @field_validator with @classmethod decorator
+- **Learning**: Pydantic V2 requires more explicit type annotations
+
+#### Architecture Decisions
+
+**Index Strategy**
+- **Decision**: Add indexes for all frequently queried columns
+- **Rationale**: Query analysis showed these columns used in WHERE/ORDER BY clauses
+- **Impact**: Significant performance improvement for search and filtering
+
+**Sync Tracking**
+- **Decision**: Use max(updated_at) from items table for last sync time
+- **Rationale**: Simple solution that reflects actual data changes
+- **Impact**: Accurate sync status without additional tracking infrastructure
+
+#### Current State Verification
+
+**Performance Status**
+- ✅ All performance indexes created via migration
+- ✅ No more Pydantic deprecation warnings
+- ✅ Search API sync tracking implemented
+- ✅ Docker configuration secured
+
+#### Technical Debt Created
+
+None - All identified technical debt has been resolved.
+
+#### Next Steps
+
+Phase 2 technical debt cleanup is complete. Ready for Phase 3 production hardening.
+
+---
+
+### ✅ Phase 1.3: Create DEPLOYMENT_GUIDE.md
+**Completed**: 2025-07-03  
+**Duration**: ~30 minutes  
+**Status**: COMPLETE - Comprehensive Deployment Documentation
+
+#### What Was Built
+
+**📚 Complete Deployment Guide**
+- **Prerequisites**: System requirements, external services
+- **Environment Setup**: Repository cloning, environment variables, secure passwords
+- **Database Setup**: PostgreSQL in Proxmox LXC with remote access
+- **Weaviate Setup**: Vector database in separate LXC container
+- **Docker Deployment**: Production docker-compose configuration
+- **Manual Deployment**: Systemd services for backend and frontend
+- **Reverse Proxy**: Nginx configuration with SSL/TLS
+- **Health Monitoring**: Prometheus integration, health endpoints
+- **Backup & Recovery**: Automated backup scripts, recovery procedures
+- **Troubleshooting**: Common issues and solutions
+- **Production Checklist**: Pre-deployment, security, performance tasks
+
+#### Architecture Decisions
+
+**Deployment Options**
+- **Decision**: Support both Docker and manual deployment
+- **Rationale**: Different environments have different requirements
+- **Impact**: Flexibility for various deployment scenarios
+
+**LXC Containers**
+- **Decision**: Document Proxmox LXC setup for databases
+- **Rationale**: Project uses LXC containers for isolation
+- **Impact**: Clear instructions for infrastructure setup
+
+---
+
+### ✅ Phase 1.4: Consolidate Testing Documentation
+**Completed**: 2025-07-03  
+**Duration**: ~30 minutes  
+**Status**: COMPLETE - Unified Testing Guide Created
+
+#### What Was Built
+
+**🧪 Comprehensive TESTING_GUIDE.md**
+- **Merged Content**: Combined docs/testing-runbook.md and TESTING_RUNBOOK.md
+- **Enhanced Coverage**: Added service layer testing documentation
+- **Quick Start**: Simple commands to run all test categories
+- **Test Architecture**: Clear explanation of test organization
+- **Backend Testing**: API, model, database, and service tests
+- **Frontend Testing**: Component and error boundary tests
+- **Coverage Reports**: How to generate and interpret coverage
+- **CI/CD**: GitHub Actions configuration example
+- **Troubleshooting**: Common issues and solutions
+- **Best Practices**: Testing patterns and guidelines
+
+**🗄️ Documentation Cleanup**
+- Archived old testing documents to docs/archive/
+- Single source of truth for testing information
+- Clear, organized structure for easy navigation
+
+#### Current State Verification
+
+**Documentation Status**
+- ✅ All major guides created and up-to-date
+- ✅ Old documentation archived
+- ✅ Consistent information across all docs
+- ✅ Production-ready documentation set
+
+---
+
 ### ✅ Phase 2.3: Add Critical Service Tests
 **Completed**: 2025-07-03  
 **Duration**: ~45 minutes  
