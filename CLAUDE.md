@@ -158,6 +158,12 @@ docker-compose up -d
 
 ## Development Guidelines
 
+### 🚨 CRITICAL WORKFLOW REMINDER
+**EVERY task completion requires:**
+1. **Update DEVELOPMENT_LOG.md** (detailed documentation)
+2. **Create git commit** (comprehensive message)
+3. **NEVER skip these steps** - they are NOT optional
+
 ### Code Organization
 - Follow service layer pattern with clear separation of concerns
 - Use dependency injection for all external dependencies
@@ -186,6 +192,11 @@ docker-compose up -d
 ### 🚨 MANDATORY Development Process Requirements
 
 > **CRITICAL**: Documentation AND Git commits are NOT optional. Failure to follow these requirements will result in incomplete work that cannot be considered "done".
+
+> **⚠️ REMINDER**: After EVERY significant change or completed task, you MUST:
+> 1. Update DEVELOPMENT_LOG.md with detailed documentation
+> 2. Create a descriptive git commit with all changes
+> 3. This applies to ALL tasks, not just "major" ones
 
 #### **📝 IMMEDIATE Documentation & Git Requirements**
 
