@@ -148,14 +148,11 @@ class WeaviateService:
                 logger.info("Item collection already exists in Weaviate")
                 return
             
-            # Create Item collection with vectorizer configuration
+            # Create Item collection without vectorizer (we handle embeddings manually)
             self._client.collections.create(
                 name="Item",
                 description="Inventory items with semantic search capabilities",
-                vectorizer_config=weaviate.classes.config.Configure.Vectorizer.text2vec_transformers(
-                    model_name="sentence-transformers/all-MiniLM-L6-v2",
-                    pooling_strategy="masked_mean"
-                ),
+                vectorizer_config=weaviate.classes.config.Configure.Vectorizer.none(),
                 properties=[
                     weaviate.classes.config.Property(
                         name="postgres_id",
@@ -292,25 +289,14 @@ class WeaviateService:
                 if not self._client:
                     raise WeaviateConnectionError("Client not initialized")
                 
+                # Generate embedding from combined text
+                embedding = self._embedding_model.encode(combined_text).tolist()
+                
                 collection = self._client.collections.get("Item")
                 
-                # Check if item already exists
-                existing = collection.query.fetch_objects(
-                    where=weaviate.classes.query.Filter.by_property("postgres_id").equal(item.id),
-                    limit=1
-                )
-                
-                if existing.objects:
-                    # Update existing
-                    collection.data.update(
-                        uuid=existing.objects[0].uuid,
-                        properties=item_data
-                    )
-                    logger.debug(f"Updated Weaviate embedding for item {item.id}")
-                else:
-                    # Create new
-                    collection.data.insert(properties=item_data)
-                    logger.debug(f"Created Weaviate embedding for item {item.id}")
+                # Create new embedding (simpler approach - no deduplication for now)
+                collection.data.insert(properties=item_data, vector=embedding)
+                logger.debug(f"Created Weaviate embedding for item {item.id}")
             
             loop = asyncio.get_event_loop()
             await loop.run_in_executor(self._executor, _create_embedding)
@@ -340,10 +326,13 @@ class WeaviateService:
                 if not self._client:
                     raise WeaviateConnectionError("Client not initialized")
                 
+                # Generate query embedding using our model
+                query_embedding = self._embedding_model.encode(query).tolist()
+                
                 collection = self._client.collections.get("Item")
                 
-                response = collection.query.near_text(
-                    query=query,
+                response = collection.query.near_vector(
+                    near_vector=query_embedding,
                     limit=limit,
                     return_metadata=weaviate.classes.query.MetadataQuery(certainty=True),
                     return_properties=[

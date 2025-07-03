@@ -248,3 +248,7 @@ yarn-error.log*
 
 # Custom project ignores
 # Add any project-specific files to ignore below
+# Coverage reports
+htmlcov/
+.coverage
+*.coverage.*

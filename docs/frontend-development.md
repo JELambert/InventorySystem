@@ -1,7 +1,7 @@
 # Frontend Development Guide - Home Inventory System
 
-**Last Updated**: 2025-01-26  
-**Version**: 1.0  
+**Last Updated**: 2025-07-03  
+**Version**: 2.0  
 **Related**: [Main Runbook](../RUNBOOK.md) | [Testing Runbook](./testing-runbook.md)
 
 This guide provides comprehensive procedures for frontend development, maintenance, and troubleshooting in the Home Inventory System.
@@ -36,8 +36,11 @@ frontend/
 │   └── config.toml            # Streamlit configuration
 ├── pages/                     # Multi-page application
 │   ├── 01_📊_Dashboard.py     # System overview and statistics
-│   ├── 02_📍_Locations.py     # Location browser and search
-│   └── 03_⚙️_Manage.py        # Location CRUD operations
+│   ├── 02_📍_Locations.py     # Location management
+│   ├── 03_⚙️_Manage.py        # System administration
+│   ├── 04_🏷️_Categories.py    # Category management
+│   ├── 05_📦_Items.py         # Item management with AI search
+│   └── 06_🎯_Movement.py      # Item movement tracking
 ├── utils/                     # Utility modules
 │   ├── __init__.py
 │   ├── api_client.py          # Backend API communication
@@ -380,6 +383,126 @@ def submit_location_form(form_data):
         else:
             show_error("Failed to create location", e.message)
 ```
+
+---
+
+## 🤖 Semantic Search UI Implementation
+
+### Overview
+The Items page (`05_📦_Items.py`) includes advanced AI-powered semantic search functionality using Weaviate vector database integration.
+
+### Key Components
+
+#### Search Toggle
+```python
+# AI Search Toggle
+semantic_enabled = st.sidebar.toggle(
+    "🧠 AI-Powered Search",
+    value=st.session_state.get("semantic_search_enabled", True),
+    help="Use artificial intelligence for natural language search"
+)
+```
+
+#### Natural Language Search Interface
+```python
+# Enhanced search box with different placeholders
+if semantic_enabled:
+    search_placeholder = "Try natural language: 'blue electronics', 'camping gear in garage'..."
+else:
+    search_placeholder = "Enter item name, description, brand, or model..."
+
+search_text = st.text_input("Search", placeholder=search_placeholder)
+```
+
+#### Search Sensitivity Control
+```python
+# Certainty slider for semantic search
+if semantic_enabled:
+    certainty = st.sidebar.slider(
+        "Search Sensitivity",
+        min_value=0,
+        max_value=100,
+        value=70,
+        help="Higher values return more relevant results"
+    ) / 100.0
+```
+
+### API Integration
+
+#### Semantic Search Calls
+```python
+# Semantic search API call
+if semantic_enabled and search_text:
+    search_result = api_client.semantic_search(
+        query=search_text,
+        limit=100,
+        certainty=certainty,
+        filters={
+            "item_types": filters.get("item_types"),
+            "status": filters.get("status"),
+            "min_value": filters.get("min_value"),
+            "max_value": filters.get("max_value")
+        }
+    )
+```
+
+#### Similar Items Feature
+```python
+# Find similar items using AI
+def show_similar_items(item: Dict):
+    similar_result = api_client.get_similar_items(
+        item_id=item.get('id'), 
+        limit=10
+    )
+    
+    if similar_result and similar_result.get("similar_items"):
+        for similar_item in similar_result["similar_items"]:
+            st.write(f"• {similar_item['name']} (Score: {similar_item['score']:.2f})")
+```
+
+### Search Result Display
+
+#### Semantic Score Indicators
+```python
+# Display confidence scores for AI search results
+if item.get("_semantic_score"):
+    st.caption(f"🎯 Relevance: {item['_semantic_score']:.0%}")
+```
+
+#### Fallback Handling
+```python
+# Graceful fallback to traditional search
+if not search_result.get("semantic_enabled", True):
+    st.warning("⚠️ AI search unavailable - using traditional keyword search")
+```
+
+### Cache Management
+
+#### Search-aware Caching
+```python
+# Cache key includes search parameters
+cache_key = f"items_{search_text}_{semantic_enabled}_{certainty}"
+
+if cache_key != st.session_state.get("last_cache_key"):
+    # Clear cache when search changes
+    st.session_state.items_cache = None
+    st.session_state.last_cache_key = cache_key
+```
+
+### Best Practices
+
+1. **User Feedback**: Always show which search mode is active
+2. **Error Handling**: Gracefully handle Weaviate unavailability
+3. **Performance**: Cache results but invalidate on parameter changes
+4. **Null Safety**: Handle None values from API responses
+5. **Debug Mode**: Provide optional debug information for troubleshooting
+
+### Example Natural Language Queries
+- "old electronics in the basement"
+- "blue items worth over 100 dollars"
+- "camping equipment purchased last year"
+- "tools that need repair"
+- "items similar to my laptop"
 
 ---
 

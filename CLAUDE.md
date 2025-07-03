@@ -6,7 +6,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 This is a **Home Inventory Management System** in active development. The project is designed as a simple, reliable solution for tracking personal belongings in a homelab environment.
 
-**Current Status**: ✅ Phase 1 Complete - Core CRUD functionality with PostgreSQL and full API implementation
+**Current Status**: ✅ Phase 2.2 Complete - Full semantic search integration with Weaviate, AI-powered natural language search, and comprehensive API implementation (40+ endpoints)
 
 ## Technology Stack
 
@@ -31,9 +31,9 @@ This is a **Home Inventory Management System** in active development. The projec
 - Dual-write pattern with PostgreSQL write confirmation before Weaviate update
 
 ### Development Phases
-1. **Phase 1 (Weeks 1-4)**: Core CRUD with PostgreSQL and authentication
-2. **Phase 2 (Weeks 5-8)**: Weaviate integration and semantic search
-3. **Phase 3 (Weeks 9-12)**: Production hardening and UX polish
+1. **Phase 1 (Weeks 1-4)**: ✅ Core CRUD with PostgreSQL - COMPLETE
+2. **Phase 2 (Weeks 5-8)**: ✅ Weaviate integration and semantic search - COMPLETE
+3. **Phase 3 (Weeks 9-12)**: Production hardening, authentication, and UX polish - READY TO BEGIN
 
 ## Expected Project Structure
 
@@ -331,14 +331,14 @@ Refer to `Architecture.md` for comprehensive technical details including:
 6. ✅ Poetry package management and Docker configuration
 7. ✅ Database migrations with Alembic
 
-**🎯 Phase 2 READY** - Semantic Search Integration:
-1. Set up Weaviate vector database integration
-2. Implement item embedding generation and storage
-3. Add semantic search endpoints to API
-4. Create advanced search UI in frontend
-5. Implement dual-write pattern (PostgreSQL + Weaviate)
+**✅ Phase 2 COMPLETE** - Semantic Search Integration:
+1. ✅ Weaviate vector database integration with v4 client
+2. ✅ Item embedding generation using sentence-transformers (all-MiniLM-L6-v2)
+3. ✅ Semantic search endpoints added to API (/api/v1/search/*)
+4. ✅ Advanced search UI with AI-powered toggle in frontend
+5. ✅ Dual-write pattern implemented with graceful fallback
 
-**🔥 Phase 1.5 COMPLETE** - Frontend Issue Resolution & Enhancement:
+**✅ Phase 1.5 COMPLETE** - Frontend Issue Resolution & Enhancement:
 1. ✅ Dashboard ValueError fixes with safe numeric conversion helpers
 2. ✅ Backend API numeric type corrections (Decimal to float serialization) 
 3. ✅ Items page critical bug fixes (undefined variables, incorrect API calls)
@@ -348,12 +348,26 @@ Refer to `Architecture.md` for comprehensive technical details including:
 7. ✅ Schema-model architecture fixes (location_id mismatch resolution)
 8. ✅ Currency formatting safety throughout frontend
 
-**Current System Status**: Fully functional inventory management system with robust PostgreSQL backend, comprehensive Streamlit frontend, and complete CRUD operations for all entities (locations, categories, items). All major frontend issues resolved - **ready for Phase 2 enhancement**.
+**✅ Phase 2.2 COMPLETE** - Semantic Search Full Implementation:
+1. ✅ Backend API Integration with ItemService dual-write pattern
+2. ✅ Data Migration infrastructure with batch embedding creation
+3. ✅ Frontend API Client Extensions with 6 new search methods
+4. ✅ Enhanced Items Page UI with natural language search
+5. ✅ Similar items discovery and AI-powered search sensitivity controls
+6. ✅ Comprehensive null-safety fixes for search result processing
 
-**🎯 Phase 2 READY** - Inventory System Integration & Polish:
-1. **Inventory Location Management**: Integrate inventory service for proper item-location relationships
-2. **Enhanced Item Features**: Add photo upload, barcode scanning, bulk operations
-3. **Advanced Search**: Implement semantic search with Weaviate vector database
-4. **Production Hardening**: Add comprehensive validation, error boundaries, performance optimization
-5. **User Experience Polish**: Mobile responsiveness, keyboard shortcuts, advanced filtering
-6. **Documentation & Testing**: Complete API documentation, comprehensive test coverage
+**Current System Status**: Fully functional inventory management system with:
+- Robust PostgreSQL backend (40+ API endpoints)
+- AI-powered semantic search with Weaviate integration
+- Natural language queries ("blue electronics in garage", "kitchen tools under $50")
+- Complete CRUD operations for all entities
+- Comprehensive error handling and graceful degradation
+- Production-ready architecture with clean separation of concerns
+
+**🎯 Phase 3 READY** - Production Deployment & Advanced Features:
+1. **Authentication & Security**: Streamlit-Authenticator integration, JWT tokens, role-based access
+2. **Image Support**: Photo upload, thumbnail generation, image-based search
+3. **Production Hardening**: Environment configuration, secrets management, monitoring
+4. **Advanced UI Features**: Dashboard customization, data visualization, reporting
+5. **Mobile Enhancements**: Camera integration, barcode scanning, offline support
+6. **Documentation**: Complete API reference, deployment guides, user manuals

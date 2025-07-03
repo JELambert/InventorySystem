@@ -1092,11 +1092,21 @@ class APIClient:
                     query_params["category_id"] = filters["category_id"]
             
             traditional_results = self.get_items(**query_params)
+            # Convert to semantic search result format for consistency
+            formatted_results = [
+                {
+                    "item": item,
+                    "score": 0.5,  # Default score for traditional results
+                    "match_type": "traditional_fallback"
+                }
+                for item in traditional_results
+            ]
             return {
-                "results": traditional_results,
-                "total_count": len(traditional_results),
-                "search_type": "traditional_fallback",
-                "semantic_available": False,
+                "results": formatted_results,
+                "total_results": len(traditional_results),
+                "search_time_ms": 0,
+                "semantic_enabled": False,
+                "fallback_used": True,
                 "query": query
             }
     
