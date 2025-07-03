@@ -9,6 +9,7 @@ import logging
 from typing import Dict, Any, Optional, List
 
 from utils.api_client import APIClient, APIError
+from components.auth import is_authenticated, show_logout_button
 from utils.helpers import (
     safe_api_call, show_error, show_success, show_warning,
     get_location_type_options, get_location_type_display,
@@ -336,8 +337,16 @@ def show_quick_actions():
 
 def main():
     """Main manage page function."""
+    # Check authentication
+    if not is_authenticated():
+        st.error('🔒 Please log in to access this page')
+        st.stop()
+    
     st.title("⚙️ Manage Inventory")
     st.markdown("Create and manage your locations and items")
+    
+    # Show logout button
+    show_logout_button()
     
     # Enable keyboard shortcuts
     enable_keyboard_shortcuts()

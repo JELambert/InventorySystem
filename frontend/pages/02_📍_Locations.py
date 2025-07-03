@@ -10,6 +10,7 @@ import logging
 from typing import List, Dict, Any, Optional
 
 from utils.api_client import APIClient, APIError
+from components.auth import is_authenticated, show_logout_button
 from utils.helpers import (
     safe_api_call, show_error, show_success, show_warning,
     create_location_dataframe, get_location_type_options,
@@ -368,8 +369,16 @@ def delete_location(location_id: int, location_name: str):
 
 def main():
     """Main locations page function."""
+    # Check authentication
+    if not is_authenticated():
+        st.error('🔒 Please log in to access this page')
+        st.stop()
+    
     st.title("📍 Locations")
     st.markdown("Browse and manage all locations in your inventory system")
+    
+    # Show logout button
+    show_logout_button()
     
     # Enable keyboard shortcuts
     enable_keyboard_shortcuts()

@@ -11,6 +11,7 @@ import re
 from typing import List, Dict, Any, Optional
 
 from utils.api_client import APIClient, APIError
+from components.auth import is_authenticated, show_logout_button
 from utils.helpers import (
     safe_api_call, show_error, show_success, show_warning,
     handle_api_error, SessionManager, validate_hex_color,
@@ -271,8 +272,16 @@ def display_category_card(category: dict, api_client: APIClient):
 
 def main():
     """Main categories page function."""
+    # Check authentication
+    if not is_authenticated():
+        st.error('🔒 Please log in to access this page')
+        st.stop()
+    
     # Enable keyboard shortcuts
     enable_keyboard_shortcuts()
+    
+    # Show logout button
+    show_logout_button()
     
     # Page header
     st.title("🏷️ Categories Management")

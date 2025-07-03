@@ -1,0 +1,25 @@
+credentials:
+  usernames:
+    admin:
+      name: "Administrator"
+      password: "$2b$12$fsezuKPE2230zURKUi23vO5V1wumUANqKYjeao5U6fqBoTWfRLc5e"  # admin123
+      email: "admin@inventory.local"
+    user:
+      name: "Regular User"
+      password: "$2b$12$Q/J8D88eEONjnf.dRY6FIOyY73Ct6AL4DQ03nuLYrXzpZFnGOU/DG"  # user123
+      email: "user@inventory.local"
+    demo:
+      name: "Demo User"
+      password: "$2b$12$OQdgtggT2bLs6Ohu3mxpSubxDsTW43DDtojDp/NesgPFb3/24sbme"  # demo123
+      email: "demo@inventory.local"
+
+cookie:
+  name: "home_inventory_auth"
+  key: "inventory_auth_key_2024"
+  expiry_days: 30
+
+preauthorized:
+  emails:
+    - "admin@inventory.local"
+    - "user@inventory.local"
+    - "demo@inventory.local"

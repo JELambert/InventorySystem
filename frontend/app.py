@@ -10,6 +10,7 @@ from utils.config import AppConfig
 from utils.api_client import APIClient
 from components.performance import enable_performance_monitoring, show_cache_management
 from components.keyboard_shortcuts import enable_keyboard_shortcuts, show_keyboard_shortcuts_help
+from components.auth import show_login_page, show_logout_button, is_authenticated
 
 # Configure logging
 logging.basicConfig(
@@ -70,6 +71,11 @@ def show_connection_status():
 
 def main():
     """Main application function."""
+    # Check authentication first
+    if not is_authenticated():
+        show_login_page()
+        return
+    
     # Header
     st.title("🏠 Home Inventory System")
     st.markdown("Welcome to your comprehensive home inventory management system.")
@@ -79,6 +85,9 @@ def main():
     
     # Sidebar navigation
     st.sidebar.title("📋 Navigation")
+    
+    # Show logout button and user info
+    show_logout_button()
     
     # Show keyboard shortcuts help
     show_keyboard_shortcuts_help()

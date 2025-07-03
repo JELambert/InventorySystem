@@ -7,21 +7,31 @@ services:
       dockerfile: Dockerfile.dev
     ports:
       - "8000:8000"
-    volumes:
-      - ./backend/app:/app/app
-      - ./backend/tests:/app/tests
-      - ./backend/scripts:/app/scripts
-      - ./backend/data:/app/data
     environment:
       - PYTHONPATH=/app
-      - DATABASE_URL=sqlite+aiosqlite:///./data/inventory.db
-      - LOG_LEVEL=INFO
-    command: poetry run uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+      - ENVIRONMENT=${ENVIRONMENT:-production}
+      - LOG_LEVEL=${LOG_LEVEL:-INFO}
+      # PostgreSQL Configuration (External Proxmox Instance)
+      - POSTGRES_HOST=${POSTGRES_HOST:-192.168.68.88}
+      - POSTGRES_PORT=${POSTGRES_PORT:-5432}
+      - POSTGRES_DB=${POSTGRES_DB:-inventory_system}
+      - POSTGRES_USER=${POSTGRES_USER:-postgres}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+      # Weaviate Configuration (External Instance)
+      - WEAVIATE_URL=${WEAVIATE_URL:-http://192.168.68.89:8080}
+      - WEAVIATE_ENABLED=${WEAVIATE_ENABLED:-true}
+      # Application Settings
+      - DEBUG=${DEBUG:-false}
+      - API_CORS_ORIGINS=${API_CORS_ORIGINS:-*}
+    restart: unless-stopped
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
       interval: 30s
       timeout: 10s
       retries: 3
+      start_period: 40s
+    networks:
+      - inventory_network
 
   frontend:
     build: 
@@ -29,31 +39,25 @@ services:
       dockerfile: Dockerfile
     ports:
       - "8501:8501"
-    volumes:
-      - ./frontend:/app
     environment:
       - API_BASE_URL=http://backend:8000
       - STREAMLIT_SERVER_ADDRESS=0.0.0.0
+      - STREAMLIT_BROWSER_GATHER_USAGE_STATS=false
+      - STREAMLIT_SERVER_ENABLE_CORS=false
+      - STREAMLIT_SERVER_ENABLE_XSRF_PROTECTION=true
     depends_on:
-      - backend
-    command: poetry run streamlit run app.py --server.address 0.0.0.0
-
-  # PostgreSQL service (optional, for production-like testing)
-  postgres:
-    image: postgres:15
-    environment:
-      POSTGRES_DB: inventory
-      POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-changeme}
-    ports:
-      - "5432:5432"
-    volumes:
-      - postgres_data:/var/lib/postgresql/data
+      backend:
+        condition: service_healthy
+    restart: unless-stopped
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      test: ["CMD", "curl", "-f", "http://localhost:8501/_stcore/health"]
       interval: 30s
       timeout: 10s
       retries: 3
+      start_period: 40s
+    networks:
+      - inventory_network
 
-volumes:
-  postgres_data:
+networks:
+  inventory_network:
+    driver: bridge

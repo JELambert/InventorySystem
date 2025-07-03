@@ -12,6 +12,7 @@ from typing import List, Dict, Any, Optional
 from datetime import datetime, timedelta
 
 from utils.api_client import APIClient, APIError
+from components.auth import is_authenticated, show_logout_button
 from utils.helpers import (
     safe_api_call, show_error, show_success, show_warning,
     handle_api_error, SessionManager, format_datetime,
@@ -45,9 +46,17 @@ st.set_page_config(
 
 def show_movement_page():
     """Main movement page display."""
+    # Check authentication
+    if not is_authenticated():
+        st.error('🔒 Please log in to access this page')
+        st.stop()
+    
     # Page header
     st.title("🎯 Item Movement & History")
     st.markdown("Sophisticated tools for moving items, tracking history, and managing quantities")
+    
+    # Show logout button
+    show_logout_button()
     
     # Initialize session manager
     session = SessionManager()

@@ -12,6 +12,7 @@ import logging
 from typing import Dict, Any
 
 from utils.api_client import APIClient, APIError
+from components.auth import is_authenticated, show_logout_button
 from utils.helpers import (
     safe_api_call, show_error, show_warning, format_datetime,
     safe_currency_format, safe_float_format, safe_int_convert
@@ -616,8 +617,16 @@ def show_recent_locations(locations: list):
 
 def main():
     """Main dashboard page function."""
+    # Check authentication
+    if not is_authenticated():
+        st.error('🔒 Please log in to access this page')
+        st.stop()
+    
     st.title("📊 Dashboard")
     st.markdown("System overview and statistics for your Home Inventory System")
+    
+    # Show logout button
+    show_logout_button()
     
     # Enable keyboard shortcuts
     enable_keyboard_shortcuts()

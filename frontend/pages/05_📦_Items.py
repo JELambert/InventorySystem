@@ -11,6 +11,7 @@ from typing import List, Dict, Any, Optional
 from datetime import datetime
 
 from utils.api_client import APIClient, APIError
+from components.auth import is_authenticated, show_logout_button
 from utils.helpers import (
     safe_api_call, show_error, show_success, show_warning,
     handle_api_error, SessionManager, safe_currency_format, format_datetime,
@@ -523,9 +524,17 @@ def show_similar_items(item: Dict):
 
 def show_items_page():
     """Main items page display."""
+    # Check authentication
+    if not is_authenticated():
+        st.error('🔒 Please log in to access this page')
+        st.stop()
+    
     # Page header
     st.title("📦 Items Management")
     st.markdown("Browse, search, and manage all inventory items")
+    
+    # Show logout button
+    show_logout_button()
     
     # Initialize session manager
     session = SessionManager()
