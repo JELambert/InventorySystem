@@ -14,7 +14,8 @@ from concurrent.futures import ThreadPoolExecutor
 
 import weaviate
 from weaviate.exceptions import WeaviateConnectionError
-from sentence_transformers import SentenceTransformer
+import openai
+from openai import AsyncOpenAI
 
 from app.models.item import Item
 from app.models.location import Location
@@ -32,11 +33,13 @@ class WeaviateConfig:
         self.url = f"http://{self.host}:{self.port}"
         self.timeout = int(os.getenv("WEAVIATE_TIMEOUT", "30"))
         
-        # Embedding model configuration
-        self.embedding_model = os.getenv(
-            "WEAVIATE_EMBEDDING_MODEL", 
-            "sentence-transformers/all-MiniLM-L6-v2"
-        )
+        # OpenAI embedding configuration
+        self.openai_api_key = os.getenv("OPENAI_API_KEY")
+        if not self.openai_api_key:
+            logger.warning("OPENAI_API_KEY not set - embeddings will not work")
+        
+        self.embedding_model = os.getenv("OPENAI_EMBEDDING_MODEL", "text-embedding-3-small")
+        self.embedding_dimensions = int(os.getenv("EMBEDDING_DIMENSIONS", "1536"))
         
         # Search configuration
         self.default_limit = int(os.getenv("WEAVIATE_DEFAULT_LIMIT", "50"))
@@ -61,19 +64,20 @@ class WeaviateService:
     def __init__(self, config: Optional[WeaviateConfig] = None):
         self.config = config or WeaviateConfig()
         self._client: Optional[weaviate.WeaviateClient] = None
-        self._embedding_model: Optional[SentenceTransformer] = None
+        self._openai_client: Optional[AsyncOpenAI] = None
         self._executor = ThreadPoolExecutor(max_workers=4)
         
         logger.info(f"Initializing Weaviate service with URL: {self.config.url}")
+        logger.info(f"Using OpenAI embedding model: {self.config.embedding_model}")
     
     async def initialize(self) -> bool:
-        """Initialize Weaviate connection and embedding model."""
+        """Initialize Weaviate connection and OpenAI client."""
         try:
             # Initialize Weaviate client
             await self._connect()
             
-            # Initialize embedding model in thread pool (CPU intensive)
-            await self._initialize_embedding_model()
+            # Initialize OpenAI client
+            self._initialize_openai_client()
             
             # Ensure schema exists
             await self._ensure_schema()
@@ -106,14 +110,29 @@ class WeaviateService:
         # Test connection
         await self.health_check()
     
-    async def _initialize_embedding_model(self) -> None:
-        """Initialize sentence transformer model."""
-        def _load_model():
-            return SentenceTransformer(self.config.embedding_model)
+    def _initialize_openai_client(self) -> None:
+        """Initialize OpenAI client for embeddings."""
+        if not self.config.openai_api_key:
+            raise ValueError("OpenAI API key is required for embeddings")
         
-        loop = asyncio.get_event_loop()
-        self._embedding_model = await loop.run_in_executor(self._executor, _load_model)
-        logger.info(f"Loaded embedding model: {self.config.embedding_model}")
+        self._openai_client = AsyncOpenAI(api_key=self.config.openai_api_key)
+        logger.info(f"Initialized OpenAI client with model: {self.config.embedding_model}")
+    
+    async def _create_embedding(self, text: str) -> List[float]:
+        """Create embedding using OpenAI API."""
+        if not self._openai_client:
+            raise ValueError("OpenAI client not initialized")
+        
+        try:
+            response = await self._openai_client.embeddings.create(
+                model=self.config.embedding_model,
+                input=text.strip(),
+                dimensions=self.config.embedding_dimensions
+            )
+            return response.data[0].embedding
+        except Exception as e:
+            logger.error(f"Failed to create OpenAI embedding: {e}")
+            raise
     
     async def health_check(self) -> bool:
         """Check if Weaviate is healthy and accessible."""
@@ -149,10 +168,14 @@ class WeaviateService:
                 return
             
             # Create Item collection without vectorizer (we handle embeddings manually)
+            # Using OpenAI text-embedding-3-small dimensions (1536)
             self._client.collections.create(
                 name="Item",
-                description="Inventory items with semantic search capabilities",
+                description="Inventory items with semantic search capabilities using OpenAI embeddings",
                 vectorizer_config=weaviate.classes.config.Configure.Vectorizer.none(),
+                vector_index_config=weaviate.classes.config.Configure.VectorIndex.hnsw(
+                    distance_metric=weaviate.classes.config.VectorDistances.COSINE
+                ),
                 properties=[
                     weaviate.classes.config.Property(
                         name="postgres_id",
@@ -285,12 +308,12 @@ class WeaviateService:
                 "updated_at": item.updated_at or datetime.now()
             }
             
-            def _create_embedding():
+            # Generate embedding using OpenAI API
+            embedding = await self._create_embedding(combined_text)
+            
+            def _insert_embedding():
                 if not self._client:
                     raise WeaviateConnectionError("Client not initialized")
-                
-                # Generate embedding from combined text
-                embedding = self._embedding_model.encode(combined_text).tolist()
                 
                 collection = self._client.collections.get("Item")
                 
@@ -299,7 +322,7 @@ class WeaviateService:
                 logger.debug(f"Created Weaviate embedding for item {item.id}")
             
             loop = asyncio.get_event_loop()
-            await loop.run_in_executor(self._executor, _create_embedding)
+            await loop.run_in_executor(self._executor, _insert_embedding)
             
             return True
             
@@ -322,12 +345,12 @@ class WeaviateService:
             limit = limit or self.config.default_limit
             certainty = certainty or self.config.default_certainty
             
+            # Generate query embedding using OpenAI API
+            query_embedding = await self._create_embedding(query)
+            
             def _search():
                 if not self._client:
                     raise WeaviateConnectionError("Client not initialized")
-                
-                # Generate query embedding using our model
-                query_embedding = self._embedding_model.encode(query).tolist()
                 
                 collection = self._client.collections.get("Item")
                 
@@ -500,7 +523,9 @@ class WeaviateService:
                     "status": "healthy",
                     "item_count": item_count,
                     "embedding_model": self.config.embedding_model,
-                    "weaviate_url": self.config.url
+                    "embedding_dimensions": self.config.embedding_dimensions,
+                    "weaviate_url": self.config.url,
+                    "embedding_provider": "openai"
                 }
             
             loop = asyncio.get_event_loop()
@@ -519,6 +544,10 @@ class WeaviateService:
                 
                 loop = asyncio.get_event_loop()
                 await loop.run_in_executor(self._executor, _close_client)
+            
+            # Close OpenAI client if it exists
+            if self._openai_client:
+                await self._openai_client.close()
             
             self._executor.shutdown(wait=True)
             logger.info("Weaviate service closed")

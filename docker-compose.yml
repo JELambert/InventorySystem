@@ -20,6 +20,13 @@ services:
       # Weaviate Configuration (External Instance)
       - WEAVIATE_URL=${WEAVIATE_URL:-http://192.168.68.89:8080}
       - WEAVIATE_ENABLED=${WEAVIATE_ENABLED:-true}
+      - WEAVIATE_TIMEOUT=${WEAVIATE_TIMEOUT:-30}
+      - WEAVIATE_DEFAULT_LIMIT=${WEAVIATE_DEFAULT_LIMIT:-50}
+      - WEAVIATE_DEFAULT_CERTAINTY=${WEAVIATE_DEFAULT_CERTAINTY:-0.7}
+      # OpenAI Configuration (Embeddings API)
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - OPENAI_EMBEDDING_MODEL=${OPENAI_EMBEDDING_MODEL:-text-embedding-3-small}
+      - EMBEDDING_DIMENSIONS=${EMBEDDING_DIMENSIONS:-1536}
       # Application Settings
       - DEBUG=${DEBUG:-false}
       - API_CORS_ORIGINS=${API_CORS_ORIGINS:-*}
