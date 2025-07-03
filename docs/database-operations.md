@@ -36,7 +36,7 @@ This guide provides comprehensive procedures for database management, operations
 **Connection String Patterns:**
 ```python
 # Development & Production
-DATABASE_URL = "postgresql+asyncpg://postgres:vaultlock1@192.168.68.88:5432/inventory_system"
+DATABASE_URL = "postgresql+asyncpg://postgres:$POSTGRES_PASSWORD@192.168.68.88:5432/inventory_system"
 
 # Testing (automatic fallback)
 DATABASE_URL = "sqlite+aiosqlite:///:memory:"
@@ -52,11 +52,13 @@ POSTGRES_HOST=192.168.68.88
 POSTGRES_PORT=5432
 POSTGRES_DB=inventory_system
 POSTGRES_USER=postgres
-POSTGRES_PASSWORD=vaultlock1
+POSTGRES_PASSWORD=your_secure_password_here  # REQUIRED - Set in .env file
 
 # Alternative: Full database URL override
-DATABASE_URL=postgresql+asyncpg://postgres:vaultlock1@192.168.68.88:5432/inventory_system
+DATABASE_URL=postgresql+asyncpg://postgres:$POSTGRES_PASSWORD@192.168.68.88:5432/inventory_system
 ```
+
+**Security Note**: Database credentials must be set through environment variables. Copy `.env.example` to `.env` and set your secure password. Never commit credentials to version control.
 
 ---
 

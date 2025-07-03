@@ -37,7 +37,13 @@ class DatabaseConfig:
         port = os.getenv("POSTGRES_PORT", "5432")
         database = os.getenv("POSTGRES_DB", "inventory_system")
         username = os.getenv("POSTGRES_USER", "postgres")
-        password = os.getenv("POSTGRES_PASSWORD", "vaultlock1")
+        password = os.getenv("POSTGRES_PASSWORD")
+        
+        if not password:
+            raise ValueError(
+                "POSTGRES_PASSWORD environment variable is required. "
+                "Please set it in your .env file or environment variables."
+            )
         
         return f"postgresql+asyncpg://{username}:{password}@{host}:{port}/{database}"
 

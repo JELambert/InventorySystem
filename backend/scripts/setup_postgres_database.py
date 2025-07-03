@@ -12,6 +12,10 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import asyncpg
 from app.database.config import DatabaseConfig
+from dotenv import load_dotenv
+
+# Load environment variables
+load_dotenv()
 
 async def create_database_if_not_exists():
     """Create the inventory_system database if it doesn't exist."""
@@ -20,8 +24,13 @@ async def create_database_if_not_exists():
     host = os.getenv("POSTGRES_HOST", "192.168.68.88")
     port = int(os.getenv("POSTGRES_PORT", "5432"))
     username = os.getenv("POSTGRES_USER", "postgres")
-    password = os.getenv("POSTGRES_PASSWORD", "vaultlock1")
+    password = os.getenv("POSTGRES_PASSWORD")
     database = os.getenv("POSTGRES_DB", "inventory_system")
+    
+    if not password:
+        print("❌ Error: POSTGRES_PASSWORD environment variable is not set")
+        print("Please set it in your .env file or environment variables")
+        return False
     
     print(f"🔧 Setting up PostgreSQL database: {database}")
     print(f"📍 Host: {host}:{port}")
