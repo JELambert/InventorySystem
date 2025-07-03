@@ -139,10 +139,17 @@
 - Health Check: ✅ {"status": "healthy", "database": "connected", "weaviate": "connected", "semantic_search": "available"}
 
 **Development Environment Setup**:
-- Created `.env.development` with external database configuration
+- Created `.env.development` with external database configuration template
 - Backend: PostgreSQL at 192.168.68.88:5432, Weaviate at 192.168.68.97:8080
 - CORS configured for frontend access: `http://localhost:8501,http://127.0.0.1:8501`
 - Debug logging enabled for development troubleshooting
+- Security: Template provided without real API keys (developers add their own locally)
+
+**Git Security Resolution** (2025-07-03 14:30):
+- ✅ **Issue**: GitHub push protection blocked commit containing OpenAI API key
+- ✅ **Resolution**: Amended commit to use placeholder values in .env.development
+- ✅ **Security Practice**: Real API keys now only stored in local .env files (not committed)
+- ✅ **Documentation**: Added clear instructions for developers to add their own API keys
 - ✅ Simplified Docker build process (no GPU libraries required)
 - ✅ Faster container startup (no model loading delay)
 - ✅ Reduced infrastructure requirements (no GPU needed)
