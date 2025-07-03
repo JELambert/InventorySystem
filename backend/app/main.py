@@ -3,6 +3,10 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager
 
+# Load environment variables from .env file
+from dotenv import load_dotenv
+load_dotenv()
+
 from app.core.logging import LoggingConfig, get_logger
 from app.api import router as api_router
 from app.services.weaviate_service import get_weaviate_service, close_weaviate_service
