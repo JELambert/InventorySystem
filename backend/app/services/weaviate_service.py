@@ -28,9 +28,19 @@ class WeaviateConfig:
     """Configuration for Weaviate connection."""
     
     def __init__(self):
-        self.host = os.getenv("WEAVIATE_HOST", "192.168.68.97")
-        self.port = os.getenv("WEAVIATE_PORT", "8080")
-        self.url = f"http://{self.host}:{self.port}"
+        # Use WEAVIATE_URL if provided, otherwise fall back to host/port
+        self.url = os.getenv("WEAVIATE_URL")
+        if not self.url:
+            self.host = os.getenv("WEAVIATE_HOST", "192.168.68.97")
+            self.port = os.getenv("WEAVIATE_PORT", "8080")
+            self.url = f"http://{self.host}:{self.port}"
+        else:
+            # Parse URL to extract host and port for backward compatibility
+            from urllib.parse import urlparse
+            parsed = urlparse(self.url)
+            self.host = parsed.hostname or "192.168.68.97"
+            self.port = str(parsed.port) if parsed.port else "8080"
+        
         self.timeout = int(os.getenv("WEAVIATE_TIMEOUT", "30"))
         
         # OpenAI embedding configuration

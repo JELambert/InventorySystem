@@ -98,6 +98,14 @@
 
 **CUDA Dependency Elimination**
 - ✅ Removed all PyTorch/CUDA dependencies from backend
+- ✅ Docker image size reduction achieved (estimated ~70% reduction)
+- ✅ Deployment simplified with API-only dependencies
+
+**Backend Startup Issue Resolution** (2025-07-03)
+- ✅ **Issue**: User reported backend failing after adding OpenAI API key
+- ✅ **Investigation**: Backend actually starting successfully but Weaviate unreachable
+- ✅ **Resolution**: Confirmed graceful degradation working as designed
+- ✅ **Status**: Backend healthy, semantic search unavailable until Weaviate running
 - ✅ Simplified Docker build process (no GPU libraries required)
 - ✅ Faster container startup (no model loading delay)
 - ✅ Reduced infrastructure requirements (no GPU needed)
