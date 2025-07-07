@@ -41,10 +41,13 @@ class ContentTemplate:
     def build_prompt(self, context: Dict[str, Any]) -> str:
         """Build the user prompt from context data."""
         try:
+            logger.debug(f"Building prompt for template {self.template_type} with context keys: {list(context.keys())}")
             return self.user_prompt_template.format(**context)
         except KeyError as e:
             logger.error(f"Missing context key for template {self.template_type}: {e}")
-            raise ValueError(f"Missing required context: {e}")
+            logger.error(f"Available context keys: {list(context.keys())}")
+            logger.error(f"Template content: {self.user_prompt_template[:200]}...")
+            raise ValueError(f"Missing required context for {self.template_type}: {e}")
 
 
 class AIService:
@@ -239,8 +242,8 @@ class AIService:
     
     def _prepare_context(self, context: Dict[str, Any], template_type: str) -> Dict[str, Any]:
         """Prepare context data for template formatting."""
-        if template_type == "item_description":
-            # Prepare item-specific context
+        if template_type in ["item_description", "item_data_enrichment"]:
+            # Prepare item-specific context for both description and enrichment templates
             prepared = {
                 "name": context.get("name", "Unknown Item"),
                 "category": context.get("category", "General"),
@@ -254,9 +257,11 @@ class AIService:
             prepared["brand_info"] = f"Brand: {brand}\n" if brand else ""
             prepared["model_info"] = f"Model: {model}\n" if model else ""
             
+            logger.debug(f"Prepared context for {template_type}: {prepared}")
             return prepared
         
         # For generic templates, pass context as-is
+        logger.debug(f"Using raw context for {template_type}: {context}")
         return context
     
     async def generate_item_description(
