@@ -24,6 +24,7 @@ from components.keyboard_shortcuts import (
 from components.import_export import show_import_export_interface
 from components.validation import create_enhanced_form_validation, create_validation_summary_widget
 from components.category_management import manage_categories_section
+from components.item_management import manage_items_section
 
 logger = logging.getLogger(__name__)
 
@@ -360,7 +361,12 @@ def main():
         manage_locations()
     
     with entity_tabs[1]:
-        manage_items()
+        # Initialize API client
+        if 'api_client' not in st.session_state:
+            st.session_state.api_client = APIClient()
+        
+        api_client = st.session_state.api_client
+        manage_items_section(api_client)
     
     with entity_tabs[2]:
         manage_categories()
@@ -447,36 +453,21 @@ def manage_locations():
         - Browse-only views are available on individual pages
         """)
 
-def manage_items():
-    """Item management section."""
-    st.subheader("📦 Item Management")
-    
-    # Management mode selection
-    item_tabs = st.tabs(["➕ Add Item", "📝 Edit Items"])
-    
-    with item_tabs[0]:
-        show_item_creation_form()
-    
-    with item_tabs[1]:
-        show_item_editing_interface()
+# Old manage_items function removed - using components/item_management.py
 
-def show_item_creation_form():
-    """Display item creation form."""
-    st.markdown("### ➕ Create New Item")
-    
-    # Initialize API client
-    if 'api_client' not in st.session_state:
-        st.session_state.api_client = APIClient()
-    
-    api_client = st.session_state.api_client
-    
-    # Load available locations and categories
-    with st.spinner("Loading locations and categories..."):
-        locations = safe_api_call(
-            lambda: api_client.get_locations(skip=0, limit=1000),
-            "Failed to load locations"
-        )
-        categories = safe_api_call(
+# Old show_item_creation_form function removed - using components/item_management.py
+
+# Old show_item_editing_interface function removed - using components/item_management.py
+
+# Old item functions content removed - using components/item_management.py
+
+# Old item creation content removed - using components/item_management.py
+# The correct manage_categories function is at the end of this file
+
+# All old item creation functions removed - using components/item_management.py
+
+def manage_categories():
+    """Category management section."""
             lambda: api_client.get_categories(page=1, per_page=100, include_inactive=False),
             "Failed to load categories"
         )

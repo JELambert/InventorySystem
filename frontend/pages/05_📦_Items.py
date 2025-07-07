@@ -1,7 +1,8 @@
 """
 Items page for the Home Inventory System.
 
-Browse, search, filter, and manage all inventory items.
+Browse, search, and filter all inventory items. Item creation has been moved 
+to the Manage page for centralized management.
 """
 
 import streamlit as st
@@ -23,6 +24,7 @@ from components.keyboard_shortcuts import (
     create_pagination_controls, create_bulk_selection_interface,
     create_action_buttons_row
 )
+from components.item_management import browse_items_section
 
 logger = logging.getLogger(__name__)
 
@@ -530,8 +532,9 @@ def show_items_page():
         st.stop()
     
     # Page header
-    st.title("📦 Items Management")
-    st.markdown("Browse, search, and manage all inventory items")
+    st.title("📦 Browse Items")
+    st.markdown("Browse, search, and filter all inventory items")
+    st.info("💡 **Note**: To create new items, visit the **Manage** page using the sidebar navigation.")
     
     # Show logout button
     show_logout_button()
@@ -554,8 +557,8 @@ def show_items_page():
             st.markdown("### Quick Actions")
         
         with action_col2:
-            if st.button("➕ Add Item", type="primary", help="Create a new item"):
-                st.session_state.show_create_form = True
+            if st.button("➕ Create Item", type="primary", help="Create a new item on the Manage page"):
+                st.switch_page("pages/03_⚙️_Manage.py")
         
         with action_col3:
             if st.button("🔄 Refresh", help="Reload items data"):
@@ -1682,8 +1685,20 @@ def show_quantity_adjust_form():
 # Main execution
 if __name__ == "__main__":
     try:
-        show_items_page()
-        show_modals()
+        # Check authentication
+        if not is_authenticated():
+            st.error('🔒 Please log in to access this page')
+            st.stop()
+        
+        # Show logout button
+        show_logout_button()
+        
+        # Initialize API client
+        api_client = APIClient()
+        
+        # Use the new browse-only items section
+        browse_items_section(api_client)
+        
     except Exception as e:
         logger.error(f"Error in items page: {str(e)}")
         show_error(f"An error occurred: {str(e)}")
