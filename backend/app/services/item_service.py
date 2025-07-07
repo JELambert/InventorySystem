@@ -87,9 +87,16 @@ class ItemService:
                     quantity=quantity
                 )
                 await self.inventory_service.create_inventory_entry(inventory_data)
-                await self.db.refresh(item, ["inventory_entries"])
             
-            # 3. Create Weaviate embedding (best effort)
+            # 3. Reload item with proper eager loading for relationships
+            item_query = select(Item).options(
+                selectinload(Item.category),
+                selectinload(Item.inventory_entries).selectinload(Inventory.location)
+            ).where(Item.id == item.id)
+            result = await self.db.execute(item_query)
+            item = result.scalar_one()
+            
+            # 4. Create Weaviate embedding (best effort)
             await self._sync_to_weaviate(item)
             
             logger.info(f"Created item {item.id}: {item.name}")

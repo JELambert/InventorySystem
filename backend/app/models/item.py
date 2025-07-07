@@ -264,16 +264,25 @@ class Item(Base):
     def primary_location(self) -> Optional["Location"]:
         """Get the primary location for this item (first inventory entry)."""
         from .location import Location
-        if self.inventory_entries:
-            return self.inventory_entries[0].location
+        # Safely check if inventory_entries is loaded and has items
+        try:
+            if hasattr(self, '_sa_instance_state') and self.inventory_entries:
+                return self.inventory_entries[0].location
+        except Exception:
+            # If lazy loading fails or relationship not loaded, return None
+            pass
         return None
     
     @property
     def full_location_path(self) -> str:
         """Get the full path to this item's primary location."""
-        primary_loc = self.primary_location
-        if primary_loc:
-            return f"{primary_loc.full_path}/{self.name}"
+        try:
+            primary_loc = self.primary_location
+            if primary_loc:
+                return f"{primary_loc.full_path}/{self.name}"
+        except Exception:
+            # If relationship access fails, just return item name
+            pass
         return self.name
     
     @property

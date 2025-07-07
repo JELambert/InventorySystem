@@ -173,8 +173,9 @@ def build_item_search_query(search: ItemSearch, session: AsyncSession):
 
 
 def enhance_item_response(item: Item) -> Dict[str, Any]:
-    """Enhance item data with computed fields."""
-    item_dict = {
+    """Enhance item data with computed fields. Safe against relationship loading issues."""
+    try:
+        item_dict = {
         "id": item.id,
         "name": item.name,
         "description": item.description,
@@ -207,9 +208,46 @@ def enhance_item_response(item: Item) -> Dict[str, Any]:
         "age_days": getattr(item, 'age_days', 0),
         "is_under_warranty": getattr(item, 'is_under_warranty', False),
         "tag_list": item.get_tag_list() if hasattr(item, 'get_tag_list') else []
-    }
-    
-    return item_dict
+        }
+        
+        return item_dict
+        
+    except Exception as e:
+        # If enhancement fails, return basic item data
+        logger.warning(f"Failed to enhance item response for item {item.id}: {e}")
+        return {
+            "id": item.id,
+            "name": item.name,
+            "description": item.description,
+            "item_type": item.item_type,
+            "condition": item.condition,
+            "status": item.status,
+            "brand": item.brand,
+            "model": item.model,
+            "serial_number": item.serial_number,
+            "barcode": item.barcode,
+            "purchase_price": item.purchase_price,
+            "current_value": item.current_value,
+            "purchase_date": item.purchase_date,
+            "warranty_expiry": item.warranty_expiry,
+            "weight": item.weight,
+            "dimensions": item.dimensions,
+            "color": item.color,
+            "category_id": item.category_id,
+            "is_active": item.is_active,
+            "version": item.version,
+            "created_at": item.created_at,
+            "updated_at": item.updated_at,
+            "notes": item.notes,
+            "tags": item.tags,
+            # Safe fallback values for computed fields
+            "display_name": item.name,
+            "full_location_path": item.name,
+            "is_valuable": False,
+            "age_days": 0,
+            "is_under_warranty": False,
+            "tag_list": []
+        }
 
 
 @router.post("/", status_code=201)
