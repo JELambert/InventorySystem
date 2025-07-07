@@ -1337,3 +1337,80 @@ class APIClient:
             data["user_preferences"] = user_preferences
             
         return self._make_request("POST", "ai/enrich-item-data", data=data)
+    
+    def analyze_item_image(
+        self, 
+        image_data: bytes, 
+        image_format: str, 
+        context_hints: Optional[Dict[str, Any]] = None,
+        user_preferences: Optional[Dict[str, Any]] = None
+    ) -> Dict[str, Any]:
+        """
+        Analyze an item image using AI vision to extract comprehensive item data.
+        
+        Args:
+            image_data: Raw image bytes
+            image_format: Image MIME type (e.g., 'image/jpeg')
+            context_hints: Optional context hints for better analysis
+            user_preferences: Optional user preferences for generation
+            
+        Returns:
+            Dictionary with extracted item data and confidence scores
+        """
+        import json
+        
+        # Prepare multipart form data
+        files = {
+            'image': ('item_image.jpg', image_data, image_format)
+        }
+        
+        # Prepare form data
+        form_data = {}
+        
+        if context_hints:
+            form_data['context_hints'] = json.dumps(context_hints)
+        
+        if user_preferences:
+            form_data['user_preferences'] = json.dumps(user_preferences)
+        
+        # Make multipart request without JSON content-type
+        url = f"{self.base_url}/ai/analyze-item-image"
+        correlation_id = self._generate_correlation_id()
+        
+        try:
+            headers = {
+                "Accept": "application/json",
+                "User-Agent": f"{AppConfig.APP_TITLE}/1.0",
+                "X-Correlation-ID": correlation_id
+            }
+            
+            # Remove Content-Type header to let requests set it for multipart
+            response = self.session.post(
+                url,
+                files=files,
+                data=form_data,
+                headers=headers,
+                timeout=self.timeout
+            )
+            
+            # Record request stats
+            duration = getattr(response, 'elapsed', timedelta()).total_seconds()
+            self._record_request_stats("ai/analyze-item-image", "POST", response.ok, duration)
+            
+            if response.status_code == 200:
+                return response.json()
+            else:
+                error_msg = f"Image analysis failed: {response.status_code}"
+                try:
+                    error_detail = response.json().get('detail', 'Unknown error')
+                    error_msg = f"Image analysis failed: {error_detail}"
+                except:
+                    pass
+                
+                logger.error(f"Image analysis API error: {error_msg}")
+                raise APIError(error_msg, response.status_code, response.json() if response.headers.get('content-type', '').startswith('application/json') else {})
+                
+        except requests.exceptions.RequestException as e:
+            error_msg = f"Failed to analyze image: {str(e)}"
+            logger.error(error_msg)
+            raise APIError(error_msg)

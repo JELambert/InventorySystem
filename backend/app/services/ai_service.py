@@ -414,6 +414,161 @@ class AIService:
                 status["error"] = str(e)
         
         return status
+    
+    async def analyze_item_from_image(
+        self,
+        image_data: bytes,
+        image_format: str,
+        context_hints: Optional[Dict[str, Any]] = None,
+        user_preferences: Optional[Dict[str, Any]] = None
+    ) -> Dict[str, Any]:
+        """
+        Analyze an item image using AI vision to extract comprehensive item data.
+        
+        Args:
+            image_data: Raw image bytes
+            image_format: Image MIME type (e.g., 'image/jpeg')
+            context_hints: Optional context hints for better analysis
+            user_preferences: Optional user preferences for generation
+            
+        Returns:
+            Dictionary containing extracted item data with confidence scores
+        """
+        if not self._openai_client:
+            raise RuntimeError("OpenAI client is not available")
+        
+        logger.info(f"Starting image analysis for {len(image_data)} bytes of {image_format}")
+        start_time = datetime.now()
+        
+        try:
+            import base64
+            
+            # Encode image to base64
+            image_base64 = base64.b64encode(image_data).decode('utf-8')
+            
+            # Build context from hints
+            context_text = ""
+            if context_hints:
+                location = context_hints.get("location", "")
+                additional = context_hints.get("additional_context", "")
+                if location:
+                    context_text += f"Location context: {location}. "
+                if additional:
+                    context_text += f"Additional context: {additional}. "
+            
+            # Create vision prompt for comprehensive item analysis
+            system_prompt = """You are an expert inventory analyst with extensive knowledge of consumer products, electronics, household items, tools, and collectibles. Your task is to analyze item images and extract comprehensive data for inventory management.
+
+Analyze the provided image and extract ALL possible information in valid JSON format with the following structure:
+
+{
+    "refined_name": "Precise, standardized item name (2-4 words)",
+    "brand": "Identified brand name (if visible/recognizable)",
+    "model": "Model number/name (if visible/identifiable)",
+    "item_type": "Specific category (e.g., smartphone, laptop, book, tool)",
+    "estimated_value": "Current market value in USD (number only)",
+    "description": "Detailed description including condition, features, and notable characteristics",
+    "condition": "New/Excellent/Good/Fair/Poor based on visual assessment",
+    "color": "Primary color(s)",
+    "material": "Primary material (if identifiable)",
+    "confidence_scores": {
+        "refined_name": 0.0-1.0,
+        "brand": 0.0-1.0,
+        "model": 0.0-1.0,
+        "item_type": 0.0-1.0,
+        "estimated_value": 0.0-1.0,
+        "description": 0.0-1.0
+    }
+}
+
+IMPORTANT GUIDELINES:
+- Only include fields you can reasonably identify from the image
+- Set confidence scores based on visual clarity and certainty
+- For estimated_value, consider condition, brand, and market knowledge
+- Be conservative with confidence scores - prefer accuracy over optimism
+- If text/labels are visible, use them for brand/model identification
+- Include condition assessment based on visible wear, damage, or newness"""
+
+            user_prompt = f"""Analyze this item image and extract comprehensive inventory data. 
+
+{context_text}
+
+Focus on:
+1. Identifying the item precisely (name, brand, model)
+2. Assessing market value based on condition and type
+3. Providing detailed description including condition
+4. Setting realistic confidence scores for each field
+
+Return ONLY valid JSON with no additional text."""
+
+            # Get model from user preferences
+            model = user_preferences.get("model", "gpt-4-vision-preview") if user_preferences else "gpt-4-vision-preview"
+            
+            # Create vision API call
+            response = await self._openai_client.chat.completions.create(
+                model=model,
+                messages=[
+                    {"role": "system", "content": system_prompt},
+                    {
+                        "role": "user",
+                        "content": [
+                            {"type": "text", "text": user_prompt},
+                            {
+                                "type": "image_url",
+                                "image_url": {
+                                    "url": f"data:{image_format};base64,{image_base64}",
+                                    "detail": "high"
+                                }
+                            }
+                        ]
+                    }
+                ],
+                max_tokens=1500,
+                temperature=0.3  # Lower temperature for more consistent analysis
+            )
+            
+            generation_time = (datetime.now() - start_time).total_seconds()
+            
+            # Parse JSON response
+            content = response.choices[0].message.content.strip()
+            
+            # Clean up response (remove markdown formatting if present)
+            if content.startswith("```json"):
+                content = content[7:]
+            if content.endswith("```"):
+                content = content[:-3]
+            content = content.strip()
+            
+            try:
+                import json
+                result_data = json.loads(content)
+            except json.JSONDecodeError as e:
+                logger.error(f"Failed to parse AI response as JSON: {e}")
+                logger.error(f"Response content: {content}")
+                raise ValueError(f"AI returned invalid JSON: {e}")
+            
+            # Add metadata
+            result_data["_metadata"] = {
+                "model": model,
+                "tokens_used": response.usage.total_tokens,
+                "generation_time": generation_time,
+                "image_size": len(image_data),
+                "image_format": image_format,
+                "analysis_type": "vision"
+            }
+            
+            # Calculate average confidence if individual scores exist
+            confidence_scores = result_data.get("confidence_scores", {})
+            if confidence_scores:
+                avg_confidence = sum(confidence_scores.values()) / len(confidence_scores)
+                result_data["_metadata"]["avg_confidence"] = avg_confidence
+            
+            logger.info(f"Completed image analysis in {generation_time:.2f}s using {response.usage.total_tokens} tokens")
+            return result_data
+            
+        except Exception as e:
+            logger.error(f"Failed to analyze image: {e}")
+            raise
 
 
 # Global service instance

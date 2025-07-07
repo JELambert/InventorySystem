@@ -22,6 +22,10 @@ from components.keyboard_shortcuts import (
     create_pagination_controls, create_bulk_selection_interface,
     create_action_buttons_row
 )
+from components.photo_capture import (
+    show_photo_capture_interface, display_photo_analysis_results,
+    show_photo_analysis_progress
+)
 
 logger = logging.getLogger(__name__)
 
@@ -57,84 +61,145 @@ def show_ai_generation_interface(api_client: APIClient) -> Dict[str, str]:
     with col_mode1:
         generation_mode = st.radio(
             "What to generate:",
-            ["Description Only", "All Fields (Smart)"],
-            help="Choose between simple description or comprehensive field enrichment",
+            ["📝 Description Only", "🧠 All Fields (Smart)", "📸 Photo Analysis"],
+            help="Choose your AI generation method",
             key="ai_generation_mode"
         )
     
     with col_mode2:
-        if generation_mode == "All Fields (Smart)":
+        if generation_mode == "🧠 All Fields (Smart)":
             st.info("🧠 Smart mode will auto-populate: Name, Brand, Model, Type, Value, and Description with confidence scores")
+        elif generation_mode == "📸 Photo Analysis":
+            st.info("📸 Photo mode analyzes item images to automatically extract all fields using AI vision")
         else:
             st.info("📝 Simple mode generates description only")
     
-    # Generation controls
-    col_gen1, col_gen2 = st.columns([1, 3])
-    
-    with col_gen1:
-        generate_button_text = "🚀 Generate All Fields" if generation_mode == "All Fields (Smart)" else "🚀 Generate Description"
-        if st.button(generate_button_text, type="primary", key="ai_generate_btn"):
-            if ai_name:
-                with st.spinner("🤖 Generating content with AI..."):
-                    context = {
-                        "name": ai_name,
-                        "category": ai_category or "General",
-                        "item_type": ai_type,
-                        "brand": ai_brand,
-                        "model": None
-                    }
-                    
+    # Handle photo analysis mode
+    if generation_mode == "📸 Photo Analysis":
+        st.markdown("---")
+        
+        # Photo capture interface
+        photo_data = show_photo_capture_interface("ai_photo")
+        
+        if photo_data:
+            # Analyze photo button
+            if st.button("🤖 Analyze Photo with AI", type="primary", key="ai_analyze_photo_btn"):
+                with st.spinner("📸 Analyzing photo with AI..."):
                     try:
-                        if generation_mode == "All Fields (Smart)":
-                            # Use the new multi-field enrichment endpoint
-                            result = safe_api_call(
-                                lambda: api_client.enrich_item_data(context),
-                                "Failed to generate enriched data"
-                            )
-                            
-                            if result:
-                                st.session_state.ai_enriched_data = result
-                                st.session_state.ai_generation_metadata = result.get("metadata", {})
-                                st.rerun()
-                            else:
-                                show_error("Failed to generate enriched data. Please try again.")
+                        # Call photo analysis API endpoint
+                        result = safe_api_call(
+                            lambda: api_client.analyze_item_image(
+                                image_data=photo_data["data"],
+                                image_format=f"image/{photo_data['format'].lower()}",
+                                context_hints=photo_data.get("context_hints", {})
+                            ),
+                            "Failed to analyze photo"
+                        )
+                        
+                        if result:
+                            st.session_state.ai_enriched_data = result
+                            st.session_state.ai_generation_metadata = result.get("metadata", {})
+                            st.session_state.ai_photo_data = photo_data
+                            st.rerun()
                         else:
-                            # Use the simple description generation
-                            result = safe_api_call(
-                                lambda: api_client.generate_item_description(context),
-                                "Failed to generate description"
-                            )
+                            show_error("Failed to analyze photo. Please try again.")
                             
-                            if result and result.get("content"):
-                                st.session_state.ai_generated_content = result["content"]
-                                st.session_state.ai_generation_metadata = {
-                                    "model": result.get("model", "unknown"),
-                                    "tokens": result.get("tokens_used", 0),
-                                    "time": result.get("generation_time", 0)
-                                }
-                                st.rerun()
-                            else:
-                                show_error("Failed to generate description. Please try again.")
-                                
                     except Exception as e:
-                        handle_api_error(e, "generate AI content")
-            else:
-                st.warning("Please enter an item name for AI generation")
-    
-    with col_gen2:
-        if st.button("🗑️ Clear Generated Content", key="ai_clear_btn"):
-            for key in ["ai_generated_content", "ai_enriched_data", "ai_generation_metadata"]:
+                        handle_api_error(e, "analyze photo")
+        
+        # Clear button for photo mode
+        if st.button("🗑️ Clear Photo Analysis", key="ai_clear_photo_btn"):
+            for key in ["ai_enriched_data", "ai_generation_metadata", "ai_photo_data"]:
                 if key in st.session_state:
                     del st.session_state[key]
+            st.rerun()
+    
+    else:
+        # Generation controls for text-based modes
+        col_gen1, col_gen2 = st.columns([1, 3])
+        
+        with col_gen1:
+            if generation_mode == "🧠 All Fields (Smart)":
+                generate_button_text = "🚀 Generate All Fields"
+            else:
+                generate_button_text = "🚀 Generate Description"
+                
+            if st.button(generate_button_text, type="primary", key="ai_generate_btn"):
+                if ai_name:
+                    with st.spinner("🤖 Generating content with AI..."):
+                        context = {
+                            "name": ai_name,
+                            "category": ai_category or "General",
+                            "item_type": ai_type,
+                            "brand": ai_brand,
+                            "model": None
+                        }
+                        
+                        try:
+                            if generation_mode == "🧠 All Fields (Smart)":
+                                # Use the new multi-field enrichment endpoint
+                                result = safe_api_call(
+                                    lambda: api_client.enrich_item_data(context),
+                                    "Failed to generate enriched data"
+                                )
+                                
+                                if result:
+                                    st.session_state.ai_enriched_data = result
+                                    st.session_state.ai_generation_metadata = result.get("metadata", {})
+                                    st.rerun()
+                                else:
+                                    show_error("Failed to generate enriched data. Please try again.")
+                            else:
+                                # Use the simple description generation
+                                result = safe_api_call(
+                                    lambda: api_client.generate_item_description(context),
+                                    "Failed to generate description"
+                                )
+                                
+                                if result and result.get("content"):
+                                    st.session_state.ai_generated_content = result["content"]
+                                    st.session_state.ai_generation_metadata = {
+                                        "model": result.get("model", "unknown"),
+                                        "tokens": result.get("tokens_used", 0),
+                                        "time": result.get("generation_time", 0)
+                                    }
+                                    st.rerun()
+                                else:
+                                    show_error("Failed to generate description. Please try again.")
+                                    
+                        except Exception as e:
+                            handle_api_error(e, "generate AI content")
+                else:
+                    st.warning("Please enter an item name for AI generation")
+        
+        with col_gen2:
+            if st.button("🗑️ Clear Generated Content", key="ai_clear_btn"):
+                for key in ["ai_generated_content", "ai_enriched_data", "ai_generation_metadata", "ai_photo_data"]:
+                    if key in st.session_state:
+                        del st.session_state[key]
             st.rerun()
     
     # Show generated content if available
     generated_fields = {}
     
+    # Photo analysis results display
+    if "ai_photo_data" in st.session_state and "ai_enriched_data" in st.session_state:
+        photo_data = st.session_state.ai_photo_data
+        enriched_data = st.session_state.ai_enriched_data
+        
+        st.markdown("---")
+        display_photo_analysis_results(enriched_data, photo_data)
+        st.markdown("---")
+    
     # Multi-field enrichment display
     if "ai_enriched_data" in st.session_state:
         enriched_data = st.session_state.ai_enriched_data
-        st.markdown("#### 🧠 AI Generated Fields")
+        
+        # Different title based on source
+        if "ai_photo_data" in st.session_state:
+            st.markdown("#### 📸 Edit AI Photo Analysis Results")
+        else:
+            st.markdown("#### 🧠 AI Generated Fields")
         
         # Show metadata
         if "ai_generation_metadata" in st.session_state:

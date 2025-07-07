@@ -7,8 +7,9 @@ and other content types using OpenAI language models.
 
 import logging
 from typing import Dict, Any, Optional
-from fastapi import APIRouter, HTTPException, BackgroundTasks
+from fastapi import APIRouter, HTTPException, BackgroundTasks, UploadFile, File, Form
 from pydantic import BaseModel, Field
+import json
 
 from app.services.ai_service import get_ai_service, AIGenerationResult
 
@@ -199,6 +200,87 @@ async def enrich_item_data(request: ItemDataEnrichmentRequest) -> ItemDataEnrich
     except Exception as e:
         logger.error(f"Failed to enrich item data: {e}")
         raise HTTPException(status_code=500, detail="Failed to enrich item data")
+
+
+@router.post("/analyze-item-image", response_model=ItemDataEnrichmentResponse)
+async def analyze_item_image(
+    image: UploadFile = File(..., description="Item image file (JPEG, PNG, WEBP)"),
+    context_hints: str = Form(None, description="Optional context hints as JSON string"),
+    user_preferences: str = Form(None, description="Optional user preferences as JSON string")
+) -> ItemDataEnrichmentResponse:
+    """
+    Analyze an item image using AI vision to extract comprehensive item data.
+    
+    This endpoint accepts an image file and uses AI vision capabilities to identify
+    and extract item information including name, brand, model, estimated value, 
+    condition, and detailed description.
+    """
+    try:
+        # Validate image file
+        if not image.content_type or not image.content_type.startswith('image/'):
+            raise HTTPException(status_code=400, detail="File must be an image")
+        
+        # Check file size (10MB limit)
+        if hasattr(image, 'size') and image.size > 10 * 1024 * 1024:
+            raise HTTPException(status_code=400, detail="Image file too large (max 10MB)")
+        
+        # Read image data
+        image_data = await image.read()
+        if len(image_data) == 0:
+            raise HTTPException(status_code=400, detail="Empty image file")
+        
+        # Parse context hints if provided
+        context_data = {}
+        if context_hints:
+            try:
+                context_data = json.loads(context_hints)
+            except json.JSONDecodeError:
+                logger.warning(f"Invalid context hints JSON: {context_hints}")
+        
+        # Parse user preferences if provided
+        preferences_data = {}
+        if user_preferences:
+            try:
+                preferences_data = json.loads(user_preferences)
+            except json.JSONDecodeError:
+                logger.warning(f"Invalid user preferences JSON: {user_preferences}")
+        
+        # Get AI service and analyze image
+        ai_service = await get_ai_service()
+        
+        enriched_data = await ai_service.analyze_item_from_image(
+            image_data=image_data,
+            image_format=image.content_type,
+            context_hints=context_data,
+            user_preferences=preferences_data
+        )
+        
+        # Extract metadata
+        metadata = enriched_data.pop("_metadata", {})
+        
+        return ItemDataEnrichmentResponse(
+            refined_name=enriched_data.get("refined_name"),
+            brand=enriched_data.get("brand"),
+            model=enriched_data.get("model"),
+            item_type=enriched_data.get("item_type"),
+            estimated_value=enriched_data.get("estimated_value"),
+            description=enriched_data.get("description"),
+            confidence_scores=enriched_data.get("confidence_scores", {}),
+            metadata=metadata
+        )
+        
+    except HTTPException:
+        # Re-raise HTTP exceptions
+        raise
+    except ValueError as e:
+        logger.warning(f"Invalid request for image analysis: {e}")
+        raise HTTPException(status_code=400, detail=str(e))
+    except RuntimeError as e:
+        logger.error(f"AI service not available: {e}")
+        raise HTTPException(status_code=503, detail="AI service is not available")
+    except Exception as e:
+        logger.error(f"Failed to analyze image: {e}")
+        raise HTTPException(status_code=500, detail="Failed to analyze image")
 
 
 @router.get("/templates", response_model=list[str])
