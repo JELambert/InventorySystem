@@ -26,6 +26,65 @@ from components.keyboard_shortcuts import (
 logger = logging.getLogger(__name__)
 
 
+def create_item_dataframe(items: List[Dict], show_inventory: bool = True) -> pd.DataFrame:
+    """Create a pandas DataFrame from items data with inventory information."""
+    if not items:
+        return pd.DataFrame()
+    
+    # Extract basic item data
+    df_data = []
+    for item in items:
+        row = {
+            "ID": item.get("id"),
+            "Name": item.get("name", ""),
+            "Type": item.get("item_type", "").replace("_", " ").title(),
+            "Brand": item.get("brand", ""),
+            "Model": item.get("model", ""),
+            "Condition": item.get("condition", "").replace("_", " ").title(),
+            "Status": item.get("status", "").replace("_", " ").title(),
+            "Current Value": safe_currency_format(item.get('current_value')) if item.get('current_value') else "",
+            "Purchase Price": safe_currency_format(item.get('purchase_price')) if item.get('purchase_price') else "",
+            "Purchase Date": item.get("purchase_date", "").split("T")[0] if item.get("purchase_date") else "",
+            "Category": item.get("category", {}).get("name", "") if item.get("category") else "",
+            "Tags": item.get("tags", ""),
+            "Serial Number": item.get("serial_number", ""),
+            "Description": (item.get("description") or "")[:100] + "..." if len(item.get("description") or "") > 100 else (item.get("description") or ""),
+        }
+        
+        # Add inventory information if requested
+        if show_inventory:
+            inventory_entries = item.get("inventory_entries", [])
+            if inventory_entries:
+                locations = []
+                total_quantity = 0
+                for entry in inventory_entries:
+                    if entry.get("location"):
+                        locations.append(f"{entry['location']['name']} ({entry.get('quantity', 1)})")
+                        total_quantity += entry.get('quantity', 1)
+                
+                row["Locations"] = ", ".join(locations)
+                row["Total Quantity"] = total_quantity
+            else:
+                row["Locations"] = "Not in inventory"
+                row["Total Quantity"] = 0
+        
+        df_data.append(row)
+    
+    df = pd.DataFrame(df_data)
+    
+    # Ensure consistent column order
+    base_columns = ["ID", "Name", "Type", "Brand", "Model", "Condition", "Status"]
+    if show_inventory:
+        base_columns.extend(["Locations", "Total Quantity"])
+    base_columns.extend(["Current Value", "Purchase Price", "Purchase Date", "Category", "Tags", "Serial Number", "Description"])
+    
+    # Reorder columns
+    existing_columns = [col for col in base_columns if col in df.columns]
+    df = df[existing_columns]
+    
+    return df
+
+
 def get_item_type_options() -> List[str]:
     """Get available item type options."""
     return [
@@ -415,9 +474,9 @@ def browse_items_section(api_client: APIClient) -> None:
         if search_term:
             filtered_items = [
                 item for item in filtered_items
-                if search_term.lower() in item.get('name', '').lower()
-                or search_term.lower() in item.get('brand', '').lower()
-                or search_term.lower() in item.get('description', '').lower()
+                if search_term.lower() in (item.get('name') or '').lower()
+                or search_term.lower() in (item.get('brand') or '').lower()
+                or search_term.lower() in (item.get('description') or '').lower()
             ]
         
         if item_type_filter != "All":
@@ -430,28 +489,59 @@ def browse_items_section(api_client: APIClient) -> None:
         if filtered_items:
             st.markdown(f"**{len(filtered_items)} items found**")
             
-            # Display items in a more compact format for browsing
-            for item in filtered_items:
-                with st.expander(f"📦 {item.get('name', 'Unknown Item')}", expanded=False):
-                    col1, col2 = st.columns(2)
-                    
-                    with col1:
-                        st.write(f"**Type:** {item.get('item_type', '').replace('_', ' ').title()}")
-                        st.write(f"**Condition:** {item.get('condition', '').replace('_', ' ').title()}")
-                        st.write(f"**Status:** {item.get('status', '').replace('_', ' ').title()}")
-                        if item.get('brand'):
-                            st.write(f"**Brand:** {item['brand']}")
-                        if item.get('model'):
-                            st.write(f"**Model:** {item['model']}")
-                    
-                    with col2:
-                        if item.get('current_value'):
-                            st.metric("Current Value", safe_currency_format(item['current_value']))
-                        elif item.get('purchase_price'):
-                            st.metric("Purchase Price", safe_currency_format(item['purchase_price']))
+            # Display view toggle
+            col1, col2 = st.columns([3, 1])
+            with col2:
+                view_mode = st.selectbox("View", ["Table", "Details"], key="items_view_mode")
+            
+            if view_mode == "Table":
+                # Create and display table view
+                df = create_item_dataframe(filtered_items, show_inventory=True)
+                if not df.empty:
+                    st.dataframe(
+                        df,
+                        use_container_width=True,
+                        hide_index=True,
+                        column_config={
+                            "ID": st.column_config.NumberColumn("ID", width="small"),
+                            "Name": st.column_config.TextColumn("Name", width="medium"),
+                            "Type": st.column_config.TextColumn("Type", width="small"),
+                            "Brand": st.column_config.TextColumn("Brand", width="small"),
+                            "Model": st.column_config.TextColumn("Model", width="small"),
+                            "Condition": st.column_config.TextColumn("Condition", width="small"),
+                            "Status": st.column_config.TextColumn("Status", width="small"),
+                            "Current Value": st.column_config.TextColumn("Current Value", width="small"),
+                            "Purchase Price": st.column_config.TextColumn("Purchase Price", width="small"),
+                            "Locations": st.column_config.TextColumn("Locations", width="medium"),
+                            "Total Quantity": st.column_config.NumberColumn("Total Qty", width="small"),
+                            "Description": st.column_config.TextColumn("Description", width="large")
+                        }
+                    )
+                else:
+                    st.info("No items to display in table format.")
+            else:
+                # Display items in detailed expander format
+                for item in filtered_items:
+                    with st.expander(f"📦 {item.get('name', 'Unknown Item')}", expanded=False):
+                        col1, col2 = st.columns(2)
                         
-                        if item.get('description'):
-                            st.write(f"**Description:** {item['description']}")
+                        with col1:
+                            st.write(f"**Type:** {item.get('item_type', '').replace('_', ' ').title()}")
+                            st.write(f"**Condition:** {item.get('condition', '').replace('_', ' ').title()}")
+                            st.write(f"**Status:** {item.get('status', '').replace('_', ' ').title()}")
+                            if item.get('brand'):
+                                st.write(f"**Brand:** {item['brand']}")
+                            if item.get('model'):
+                                st.write(f"**Model:** {item['model']}")
+                        
+                        with col2:
+                            if item.get('current_value'):
+                                st.metric("Current Value", safe_currency_format(item['current_value']))
+                            elif item.get('purchase_price'):
+                                st.metric("Purchase Price", safe_currency_format(item['purchase_price']))
+                            
+                            if item.get('description'):
+                                st.write(f"**Description:** {item['description']}")
         else:
             st.info("No items found matching your criteria.")
     else:
