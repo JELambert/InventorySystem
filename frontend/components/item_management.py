@@ -331,8 +331,14 @@ def manage_items_section(api_client: APIClient) -> None:
                 "Failed to load items"
             )
         
-        if items_data and items_data.get('items'):
-            items = items_data['items']
+        if items_data:
+            # Handle both direct list and wrapped response formats
+            if isinstance(items_data, dict) and 'items' in items_data:
+                items = items_data['items']
+            elif isinstance(items_data, list):
+                items = items_data
+            else:
+                items = []
             
             # Search and filter
             search_term = st.text_input("🔍 Search items", placeholder="Search by name, brand, or description...")
@@ -382,13 +388,19 @@ def browse_items_section(api_client: APIClient) -> None:
     
     # Load and display items for browsing
     with st.spinner("Loading items..."):
-        items_data = safe_api_call(
+        items = safe_api_call(
             lambda: api_client.get_items(skip=0, limit=100),
             "Failed to load items"
         )
     
-    if items_data and items_data.get('items'):
-        items = items_data['items']
+    if items:
+        # Handle both direct list and wrapped response formats
+        if isinstance(items, dict) and 'items' in items:
+            items_list = items['items']
+        elif isinstance(items, list):
+            items_list = items
+        else:
+            items_list = []
         
         # Enhanced search and filtering
         col1, col2 = st.columns([2, 1])
@@ -398,7 +410,7 @@ def browse_items_section(api_client: APIClient) -> None:
             item_type_filter = st.selectbox("Filter by Type", ["All"] + get_item_type_options())
         
         # Apply filters
-        filtered_items = items
+        filtered_items = items_list
         
         if search_term:
             filtered_items = [
