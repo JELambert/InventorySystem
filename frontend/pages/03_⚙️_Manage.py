@@ -1,7 +1,7 @@
 """
 Management page for the Home Inventory System.
 
-Create, edit, and delete locations in your inventory system.
+Create, edit, and delete locations, items, and categories in your inventory system.
 """
 
 import streamlit as st
@@ -23,6 +23,7 @@ from components.keyboard_shortcuts import (
 )
 from components.import_export import show_import_export_interface
 from components.validation import create_enhanced_form_validation, create_validation_summary_widget
+from components.category_management import manage_categories_section
 
 logger = logging.getLogger(__name__)
 
@@ -343,7 +344,7 @@ def main():
         st.stop()
     
     st.title("⚙️ Manage Inventory")
-    st.markdown("Create and manage your locations and items")
+    st.markdown("Create and manage your locations, items, and categories")
     
     # Show logout button
     show_logout_button()
@@ -353,13 +354,16 @@ def main():
     show_keyboard_shortcuts_help()
     
     # Main entity selection
-    entity_tabs = st.tabs(["📍 Locations", "📦 Items"])
+    entity_tabs = st.tabs(["📍 Locations", "📦 Items", "🏷️ Categories"])
     
     with entity_tabs[0]:
         manage_locations()
     
     with entity_tabs[1]:
         manage_items()
+    
+    with entity_tabs[2]:
+        manage_categories()
 
 def manage_locations():
     """Location management section."""
@@ -418,30 +422,29 @@ def manage_locations():
     # Help section
     with st.expander("❓ Need Help?"):
         st.markdown("""
-        ### Location Management Guide
+        ### Management Guide
         
-        **Creating Locations:**
-        1. Enter a descriptive name for your location
-        2. Add an optional description for more details
-        3. Select the appropriate location type
-        4. Choose a parent location if applicable
-        5. Click 'Create Location' to save
+        **Locations:**
+        - Use the Locations tab to create rooms, containers, and shelves
+        - Follow the hierarchy: Houses → Rooms → Containers → Shelves
+        - Add descriptions for better organization
         
-        **Editing Locations:**
-        - Click 'Edit' next to any location in the Locations page
-        - Modify the fields as needed
-        - Click 'Update Location' to save changes
+        **Items:**
+        - Use the Items tab to add new inventory items
+        - Assign items to specific locations
+        - Include details like brand, model, and value
         
-        **Location Hierarchy:**
-        - Houses are top-level containers
-        - Rooms go inside houses
-        - Containers go inside rooms
-        - Shelves go inside containers
+        **Categories:**
+        - Use the Categories tab to organize your inventory
+        - Create categories like "Electronics", "Books", "Tools"
+        - Assign optional colors for visual organization
+        - Apply categories to both locations and items
         
         **Tips:**
-        - Use clear, descriptive names
-        - Add descriptions for better organization
-        - Follow the hierarchy rules for best results
+        - Use clear, descriptive names for all entities
+        - Categories help with searching and filtering
+        - All management operations are centralized here
+        - Browse-only views are available on individual pages
         """)
 
 def manage_items():
@@ -749,6 +752,22 @@ def show_item_editing_interface():
                 if st.button("❌ Cancel"):
                     st.session_state.show_delete_confirm = False
                     st.rerun()
+
+def manage_categories():
+    """Category management section."""
+    # Initialize API client
+    if 'api_client' not in st.session_state:
+        st.session_state.api_client = APIClient()
+    
+    api_client = st.session_state.api_client
+    
+    # Test API connection
+    if not api_client.health_check():
+        st.error("❌ Cannot connect to the API. Please check if the backend server is running.")
+        st.stop()
+    
+    # Use the category management component
+    manage_categories_section(api_client)
 
 if __name__ == "__main__":
     main()
