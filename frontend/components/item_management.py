@@ -657,6 +657,131 @@ def display_item_card(item: Dict[str, Any], show_actions: bool = True) -> None:
                     st.session_state[f"show_item_{item.get('id')}"] = True
                 if st.button("✏️ Edit", key=f"item_edit_{item.get('id')}"):
                     st.session_state[f"edit_item_{item.get('id')}"] = True
+                if st.button("🗑️ Delete", key=f"item_delete_{item.get('id')}", type="secondary"):
+                    st.session_state[f"confirm_delete_item_{item.get('id')}"] = True
+
+
+def show_item_delete_confirmation(item: Dict[str, Any], api_client: APIClient) -> None:
+    """
+    Show delete confirmation dialog for an item.
+    
+    Args:
+        item: Item data dictionary
+        api_client: API client instance
+    """
+    item_id = item.get('id')
+    item_name = item.get('name', 'Unknown Item')
+    
+    st.warning(f"⚠️ Are you sure you want to delete '{item_name}'?")
+    
+    # Show item details for confirmation
+    col1, col2 = st.columns(2)
+    with col1:
+        st.write(f"**Type:** {item.get('item_type', '').replace('_', ' ').title()}")
+        st.write(f"**Condition:** {item.get('condition', '').replace('_', ' ').title()}")
+    with col2:
+        if item.get('current_value'):
+            st.write(f"**Value:** {safe_currency_format(item['current_value'])}")
+        elif item.get('purchase_price'):
+            st.write(f"**Purchase Price:** {safe_currency_format(item['purchase_price'])}")
+    
+    # Delete options
+    st.markdown("**Delete Options:**")
+    permanent_delete = st.checkbox(
+        "Permanent Delete (cannot be undone)", 
+        key=f"permanent_delete_{item_id}",
+        help="Check this to permanently delete the item. Otherwise, it will be soft deleted and can be restored."
+    )
+    
+    if permanent_delete:
+        st.error("⚠️ **Warning**: This will permanently remove the item and cannot be undone!")
+    else:
+        st.info("ℹ️ Item will be soft deleted and can be restored later if needed.")
+    
+    # Action buttons
+    col1, col2, col3 = st.columns(3)
+    
+    with col1:
+        if st.button("✅ Yes, Delete", key=f"confirm_delete_action_{item_id}", type="primary"):
+            delete_item_action(item_id, item_name, permanent_delete, api_client)
+    
+    with col2:
+        if st.button("❌ Cancel", key=f"cancel_delete_{item_id}"):
+            # Clear the confirmation state
+            if f"confirm_delete_item_{item_id}" in st.session_state:
+                del st.session_state[f"confirm_delete_item_{item_id}"]
+            st.rerun()
+    
+    with col3:
+        st.caption("Choose wisely!")
+
+
+def delete_item_action(item_id: int, item_name: str, permanent: bool, api_client: APIClient) -> None:
+    """
+    Perform the actual item deletion.
+    
+    Args:
+        item_id: ID of the item to delete
+        item_name: Name of the item for display
+        permanent: Whether to permanently delete the item
+        api_client: API client instance
+    """
+    try:
+        with st.spinner(f"Deleting {item_name}..."):
+            # Call the delete API with permanent flag
+            if permanent:
+                # For permanent delete, we need to call the API with the permanent parameter
+                success = safe_api_call(
+                    lambda: api_client._make_request("DELETE", f"items/{item_id}", params={"permanent": True}),
+                    f"Failed to permanently delete item: {item_name}"
+                )
+            else:
+                # For soft delete, use the standard delete method
+                success = safe_api_call(
+                    lambda: api_client.delete_item(item_id),
+                    f"Failed to delete item: {item_name}"
+                )
+            
+            if success:
+                delete_type = "permanently deleted" if permanent else "deleted"
+                show_success(f"✅ Item '{item_name}' has been {delete_type} successfully!")
+                
+                # Clear any session state related to this item
+                cleanup_item_session_state(item_id)
+                
+                # Force a rerun to refresh the item list
+                st.rerun()
+            else:
+                show_error(f"Failed to delete item '{item_name}'. Please try again.")
+                
+    except Exception as e:
+        handle_api_error(e, f"delete item '{item_name}'")
+
+
+def cleanup_item_session_state(item_id: int) -> None:
+    """
+    Clean up session state variables related to a deleted item.
+    
+    Args:
+        item_id: ID of the deleted item
+    """
+    # List of session state keys that might exist for this item
+    keys_to_clean = [
+        f"show_item_{item_id}",
+        f"edit_item_{item_id}",
+        f"confirm_delete_item_{item_id}",
+        f"permanent_delete_{item_id}",
+        f"confirm_delete_action_{item_id}",
+        f"cancel_delete_{item_id}",
+        f"item_view_{item_id}",
+        f"item_edit_{item_id}",
+        f"item_delete_{item_id}"
+    ]
+    
+    # Remove any existing keys
+    for key in keys_to_clean:
+        if key in st.session_state:
+            del st.session_state[key]
 
 
 def manage_items_section(api_client: APIClient) -> None:
@@ -715,8 +840,16 @@ def manage_items_section(api_client: APIClient) -> None:
                 st.markdown(f"**{len(filtered_items)} items found**")
                 
                 for item in filtered_items:
-                    display_item_card(item, show_actions=True)
-                    st.divider()
+                    # Check if delete confirmation is requested for this item
+                    item_id = item.get('id')
+                    if st.session_state.get(f"confirm_delete_item_{item_id}", False):
+                        # Show delete confirmation dialog
+                        show_item_delete_confirmation(item, api_client)
+                        st.divider()
+                    else:
+                        # Show normal item card
+                        display_item_card(item, show_actions=True)
+                        st.divider()
             else:
                 st.info("No items found matching your search criteria.")
         else:
