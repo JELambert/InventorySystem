@@ -130,23 +130,67 @@ def create_category_form(category: Optional[dict] = None, mode: str = "create") 
             height=100
         )
         
-        # Color picker (optional)
-        col1, col2 = st.columns([2, 1])
+        # Enhanced color picker (optional)
+        st.markdown("**Category Color** (Optional)")
+        
+        # Color presets for quick selection
+        st.markdown("*Quick Color Presets:*")
+        preset_colors = {
+            "🔵 Electronics": "#007BFF",
+            "📚 Books": "#28A745", 
+            "🔧 Tools": "#FD7E14",
+            "🏠 Home": "#6610F2",
+            "🍳 Kitchen": "#DC3545",
+            "🚗 Automotive": "#495057",
+            "⚽ Sports": "#20C997",
+            "💼 Office": "#6C757D"
+        }
+        
+        # Get current color value
+        current_color = category.get("color", "") if category else ""
+        selected_color = current_color or "#007BFF"  # Default to blue if no color
+        
+        # Preset color buttons
+        preset_cols = st.columns(4)
+        for i, (label, preset_color) in enumerate(preset_colors.items()):
+            with preset_cols[i % 4]:
+                if st.button(label, key=f"preset_{i}_{mode}"):
+                    selected_color = preset_color
+                    st.rerun()
+        
+        # Main color picker and controls
+        col1, col2, col3 = st.columns([2, 1, 1])
         
         with col1:
-            color = st.text_input(
-                "Color (Hex Code)",
-                value=category.get("color", "") if category else "",
-                placeholder="#007BFF",
-                help="Optional color in hex format (e.g., #007BFF)",
-                max_chars=7
+            # Interactive color picker
+            color = st.color_picker(
+                "Choose Color",
+                value=selected_color,
+                help="Select a color for this category",
+                key=f"color_picker_{mode}_{category['id'] if category else 'new'}"
             )
         
         with col2:
-            if color and validate_hex_color(color):
-                st.color_picker("Color Preview", value=color, disabled=True)
-            else:
-                st.color_picker("Color Preview", value="#000000", disabled=True)
+            # Clear color option
+            if st.button("🚫 No Color", key=f"clear_color_{mode}", help="Remove category color"):
+                color = ""
+                st.rerun()
+        
+        with col3:
+            # Show hex code (read-only for reference)
+            if color:
+                st.text_input("Hex Code", value=color, disabled=True, help="Generated hex code")
+        
+        # Live preview of category appearance
+        if color:
+            st.markdown("**Preview:**")
+            st.markdown(
+                f"<div style='display: flex; align-items: center; padding: 10px; border: 1px solid #ddd; border-radius: 5px; background-color: #f8f9fa;'>"
+                f"<div style='width: 20px; height: 20px; background-color: {color}; "
+                f"border-radius: 50%; margin-right: 10px; border: 1px solid #ccc;'></div>"
+                f"<strong>{name if name else 'Category Name'}</strong></div>",
+                unsafe_allow_html=True
+            )
         
         # Form validation and submission
         submitted = st.form_submit_button(
@@ -162,6 +206,7 @@ def create_category_form(category: Optional[dict] = None, mode: str = "create") 
             if not stripped_name:
                 errors.append("Category name is required")
             
+            # Color validation (only if provided)
             if color and not validate_hex_color(color):
                 errors.append("Color must be in hex format (e.g., #007BFF)")
             
