@@ -281,25 +281,36 @@ async def delete_location(
     
     logger.info(f"Deleting location ID: {location_id}")
     
-    # Get location
-    result = await session.execute(
-        select(Location).where(Location.id == location_id)
-    )
-    location = result.scalar_one_or_none()
-    
-    if not location:
-        logger.warning(f"Location not found: {location_id}")
-        raise HTTPException(status_code=404, detail="Location not found")
-    
-    # Count descendants for logging
-    descendants = location.get_all_descendants()
-    descendant_count = len(descendants)
-    
-    # Delete location (cascade will handle descendants)
-    await session.delete(location)
-    await session.commit()
-    
-    logger.info(f"Deleted location: {location.name} and {descendant_count} descendants")
+    try:
+        # Get location
+        result = await session.execute(
+            select(Location).where(Location.id == location_id)
+        )
+        location = result.scalar_one_or_none()
+        
+        if not location:
+            logger.warning(f"Location not found: {location_id}")
+            raise HTTPException(status_code=404, detail="Location not found")
+        
+        location_name = location.name
+        location_type = location.location_type.value
+        
+        # Delete location (PostgreSQL CASCADE will handle descendants and inventory entries automatically)
+        await session.delete(location)
+        await session.commit()
+        
+        logger.info(f"Successfully deleted location: '{location_name}' (type: {location_type}) and all descendants via CASCADE")
+        
+    except HTTPException:
+        # Re-raise HTTP exceptions (like 404)
+        raise
+    except Exception as e:
+        logger.error(f"Error deleting location {location_id}: {str(e)}")
+        await session.rollback()
+        raise HTTPException(
+            status_code=500, 
+            detail=f"Failed to delete location: {str(e)}"
+        )
 
 
 @router.post("/search", response_model=List[LocationResponse])
