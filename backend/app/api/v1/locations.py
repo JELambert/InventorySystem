@@ -37,8 +37,13 @@ async def get_locations(
     
     logger.info(f"Fetching locations: skip={skip}, limit={limit}, type={location_type}, parent_id={parent_id}")
     
-    # Build query with filters
-    query = select(Location).offset(skip).limit(limit)
+    # Build query with filters and eager loading
+    query = (
+        select(Location)
+        .offset(skip)
+        .limit(limit)
+        .options(selectinload(Location.parent))
+    )
     
     if location_type:
         query = query.where(Location.location_type == location_type)
@@ -63,7 +68,9 @@ async def get_location(
     logger.info(f"Fetching location ID: {location_id}")
     
     result = await session.execute(
-        select(Location).where(Location.id == location_id)
+        select(Location)
+        .where(Location.id == location_id)
+        .options(selectinload(Location.parent))
     )
     location = result.scalar_one_or_none()
     
@@ -96,7 +103,9 @@ async def get_location_children(
     
     # Get children
     result = await session.execute(
-        select(Location).where(Location.parent_id == location_id)
+        select(Location)
+        .where(Location.parent_id == location_id)
+        .options(selectinload(Location.parent))
     )
     children = result.scalars().all()
     
@@ -302,8 +311,8 @@ async def search_locations(
     
     logger.info(f"Searching locations with query: {search_query}")
     
-    # Build base query
-    query = select(Location)
+    # Build base query with eager loading
+    query = select(Location).options(selectinload(Location.parent))
     
     # Apply filters
     if search_query.location_type:

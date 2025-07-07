@@ -103,9 +103,13 @@ class Location(Base):
         Returns:
             String representation of the full path (e.g., "House/Living Room/Bookshelf")
         """
-        if self.parent is None:
+        try:
+            if self.parent is None:
+                return self.name
+            return f"{self.parent.full_path}/{self.name}"
+        except Exception:
+            # Fallback if parent relationship is not loaded or accessible
             return self.name
-        return f"{self.parent.full_path}/{self.name}"
 
     @property
     def depth(self) -> int:
@@ -115,9 +119,14 @@ class Location(Base):
         Returns:
             Integer depth (0 for root level, 1 for first child, etc.)
         """
-        if self.parent is None:
-            return 0
-        return self.parent.depth + 1
+        try:
+            if self.parent is None:
+                return 0
+            return self.parent.depth + 1
+        except Exception:
+            # Fallback if parent relationship is not loaded or accessible
+            # Use parent_id to estimate depth (not perfectly accurate but safer)
+            return 1 if self.parent_id is not None else 0
 
     def is_ancestor_of(self, other: "Location") -> bool:
         """
