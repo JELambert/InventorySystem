@@ -106,9 +106,79 @@ def create_category_search_filters() -> Dict[str, Any]:
     }
 
 
+def handle_color_selection_outside_form(category: Optional[dict] = None, mode: str = "create") -> str:
+    """Handle color selection UI outside of form context."""
+    
+    # Session state key for storing selected color
+    color_key = f"selected_color_{mode}_{category['id'] if category else 'new'}"
+    
+    # Get current color value
+    current_color = category.get("color", "") if category else ""
+    
+    # Initialize session state if not exists
+    if color_key not in st.session_state:
+        st.session_state[color_key] = current_color or "#007BFF"
+    
+    st.markdown("### 🎨 Choose Category Color")
+    
+    # Color presets for quick selection
+    st.markdown("**Quick Color Presets:**")
+    preset_colors = {
+        "🔵 Electronics": "#007BFF",
+        "📚 Books": "#28A745", 
+        "🔧 Tools": "#FD7E14",
+        "🏠 Home": "#6610F2",
+        "🍳 Kitchen": "#DC3545",
+        "🚗 Automotive": "#495057",
+        "⚽ Sports": "#20C997",
+        "💼 Office": "#6C757D"
+    }
+    
+    # Preset color buttons (outside form - these work fine)
+    preset_cols = st.columns(4)
+    for i, (label, preset_color) in enumerate(preset_colors.items()):
+        with preset_cols[i % 4]:
+            if st.button(label, key=f"preset_{i}_{mode}"):
+                st.session_state[color_key] = preset_color
+                st.rerun()
+    
+    # Control buttons
+    col1, col2 = st.columns([1, 1])
+    
+    with col1:
+        if st.button("🚫 Clear Color", key=f"clear_color_{mode}", help="Remove category color"):
+            st.session_state[color_key] = ""
+            st.rerun()
+    
+    with col2:
+        if st.button("🔄 Reset to Default", key=f"reset_color_{mode}", help="Reset to default blue"):
+            st.session_state[color_key] = "#007BFF"
+            st.rerun()
+    
+    return st.session_state[color_key]
+
+
 def create_category_form(category: Optional[dict] = None, mode: str = "create") -> Dict[str, Any]:
-    """Create category creation/edit form."""
+    """Create category creation/edit form with external color selection."""
     form_title = "✏️ Edit Category" if mode == "edit" else "➕ Create New Category"
+    
+    # Handle color selection outside form first
+    selected_color = handle_color_selection_outside_form(category, mode)
+    
+    # Show current selection
+    if selected_color:
+        st.info(f"🎨 **Selected Color:** {selected_color}")
+        st.markdown(
+            f"<div style='display: flex; align-items: center; margin: 10px 0;'>"
+            f"<div style='width: 30px; height: 30px; background-color: {selected_color}; "
+            f"border-radius: 50%; margin-right: 10px; border: 2px solid #333;'></div>"
+            f"<strong>Preview: </strong><span style='color: {selected_color}'>Category Color</span></div>",
+            unsafe_allow_html=True
+        )
+    else:
+        st.info("🎨 **No color selected** - Category will appear without color")
+    
+    st.markdown("---")
     
     with st.form(f"cat_form_{mode}_{category['id'] if category else 'new'}"):
         st.subheader(form_title)
@@ -130,65 +200,38 @@ def create_category_form(category: Optional[dict] = None, mode: str = "create") 
             height=100
         )
         
-        # Enhanced color picker (optional)
-        st.markdown("**Category Color** (Optional)")
-        
-        # Color presets for quick selection
-        st.markdown("*Quick Color Presets:*")
-        preset_colors = {
-            "🔵 Electronics": "#007BFF",
-            "📚 Books": "#28A745", 
-            "🔧 Tools": "#FD7E14",
-            "🏠 Home": "#6610F2",
-            "🍳 Kitchen": "#DC3545",
-            "🚗 Automotive": "#495057",
-            "⚽ Sports": "#20C997",
-            "💼 Office": "#6C757D"
-        }
-        
-        # Get current color value
-        current_color = category.get("color", "") if category else ""
-        selected_color = current_color or "#007BFF"  # Default to blue if no color
-        
-        # Preset color buttons
-        preset_cols = st.columns(4)
-        for i, (label, preset_color) in enumerate(preset_colors.items()):
-            with preset_cols[i % 4]:
-                if st.button(label, key=f"preset_{i}_{mode}"):
-                    selected_color = preset_color
-                    st.rerun()
-        
-        # Main color picker and controls
-        col1, col2, col3 = st.columns([2, 1, 1])
+        # Color picker (form-compatible widget)
+        col1, col2 = st.columns([2, 1])
         
         with col1:
-            # Interactive color picker
             color = st.color_picker(
-                "Choose Color",
-                value=selected_color,
-                help="Select a color for this category",
+                "Fine-tune Color (Optional)",
+                value=selected_color if selected_color else "#007BFF",
+                help="Fine-tune the selected color or choose a custom color",
                 key=f"color_picker_{mode}_{category['id'] if category else 'new'}"
             )
         
         with col2:
-            # Clear color option
-            if st.button("🚫 No Color", key=f"clear_color_{mode}", help="Remove category color"):
-                color = ""
-                st.rerun()
-        
-        with col3:
             # Show hex code (read-only for reference)
-            if color:
-                st.text_input("Hex Code", value=color, disabled=True, help="Generated hex code")
+            st.text_input("Hex Code", value=color, disabled=True, help="Generated hex code")
         
-        # Live preview of category appearance
-        if color:
-            st.markdown("**Preview:**")
+        # Live preview of category appearance with actual name
+        if color and name:
+            st.markdown("**Live Preview:**")
             st.markdown(
-                f"<div style='display: flex; align-items: center; padding: 10px; border: 1px solid #ddd; border-radius: 5px; background-color: #f8f9fa;'>"
-                f"<div style='width: 20px; height: 20px; background-color: {color}; "
-                f"border-radius: 50%; margin-right: 10px; border: 1px solid #ccc;'></div>"
-                f"<strong>{name if name else 'Category Name'}</strong></div>",
+                f"<div style='display: flex; align-items: center; padding: 15px; border: 1px solid #ddd; border-radius: 8px; background-color: #f8f9fa; margin: 10px 0;'>"
+                f"<div style='width: 24px; height: 24px; background-color: {color}; "
+                f"border-radius: 50%; margin-right: 15px; border: 2px solid #333;'></div>"
+                f"<strong style='font-size: 16px;'>{name}</strong></div>",
+                unsafe_allow_html=True
+            )
+        elif name:
+            st.markdown("**Live Preview:**")
+            st.markdown(
+                f"<div style='display: flex; align-items: center; padding: 15px; border: 1px solid #ddd; border-radius: 8px; background-color: #f8f9fa; margin: 10px 0;'>"
+                f"<div style='width: 24px; height: 24px; background-color: #ccc; "
+                f"border-radius: 50%; margin-right: 15px; border: 2px solid #333;'></div>"
+                f"<strong style='font-size: 16px;'>{name}</strong><span style='margin-left: 10px; color: #666;'>(No color)</span></div>",
                 unsafe_allow_html=True
             )
         
@@ -214,6 +257,11 @@ def create_category_form(category: Optional[dict] = None, mode: str = "create") 
                 for error in errors:
                     st.error(error)
                 return {}
+            
+            # Clear session state after successful submission
+            color_key = f"selected_color_{mode}_{category['id'] if category else 'new'}"
+            if color_key in st.session_state:
+                del st.session_state[color_key]
             
             # Return form data
             return {
