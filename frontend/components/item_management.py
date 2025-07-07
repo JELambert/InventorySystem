@@ -177,7 +177,7 @@ def show_ai_generation_interface(api_client: APIClient) -> Dict[str, str]:
                 for key in ["ai_generated_content", "ai_enriched_data", "ai_generation_metadata", "ai_photo_data"]:
                     if key in st.session_state:
                         del st.session_state[key]
-            st.rerun()
+                st.rerun()
     
     # Show generated content if available
     generated_fields = {}
@@ -475,16 +475,24 @@ def create_item_form(api_client: APIClient, create_with_location: bool = True) -
         )
     
     with col_option2:
+        # Use session state to persist AI generation mode across reruns
+        if "ai_generation_enabled" not in st.session_state:
+            st.session_state.ai_generation_enabled = False
+            
         enable_ai_generation = st.checkbox(
             "🤖 Enable AI Description",
-            value=False,
+            value=st.session_state.ai_generation_enabled,
             help="Generate description using AI before filling out the form",
             key="enable_ai_generation"
         )
+        
+        # Update session state when checkbox changes
+        if enable_ai_generation != st.session_state.ai_generation_enabled:
+            st.session_state.ai_generation_enabled = enable_ai_generation
     
     # AI Generation Interface (outside form)
     ai_generated_fields = {}
-    if enable_ai_generation:
+    if st.session_state.ai_generation_enabled:
         ai_generated_fields = show_ai_generation_interface(api_client)
     
     # Phase 2: Item Creation Form (form-only elements)
@@ -663,7 +671,11 @@ def create_item_form(api_client: APIClient, create_with_location: bool = True) -
                     show_success(success_message)
                     
                     # Clean up AI generation session state
-                    for key in ["ai_generated_content", "ai_enriched_data", "ai_generation_metadata"]:
+                    ai_keys_to_clear = [
+                        "ai_generated_content", "ai_enriched_data", "ai_generation_metadata", 
+                        "ai_photo_data", "ai_generation_enabled"
+                    ]
+                    for key in ai_keys_to_clear:
                         if key in st.session_state:
                             del st.session_state[key]
                     
