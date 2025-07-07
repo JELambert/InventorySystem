@@ -170,11 +170,31 @@ def create_item_form(api_client: APIClient, create_with_location: bool = True) -
         with col1:
             st.markdown("**📋 Basic Information**")
             name = st.text_input("Item Name*", help="Enter the item name")
-            description = st.text_area("Description", help="Optional description of the item")
             
             # Item type selection
             item_types = get_item_type_options()
             item_type = st.selectbox("Item Type*", item_types, help="Select the primary type")
+            
+            # Description field with AI generation
+            st.markdown("**Description**")
+            description = st.text_area("Description", help="Optional description of the item", key="item_description_field")
+            
+            # AI generation for description (after we have the item type)
+            from components.ai_generation import ai_item_description_generator
+            ai_description = ai_item_description_generator(
+                api_client=api_client,
+                name=name,
+                category=None,  # Category selected later in form
+                item_type=item_type,
+                brand=None,  # Brand set later in form
+                model=None,  # Model set later in form
+                key_prefix="create_item_ai"
+            )
+            
+            # If AI generated content, update the description field
+            if ai_description:
+                st.session_state.item_description_field = ai_description
+                st.rerun()
             
             # Condition and status
             conditions = get_condition_options()

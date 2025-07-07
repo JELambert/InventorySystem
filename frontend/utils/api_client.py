@@ -1235,3 +1235,78 @@ class APIClient:
         except APIError as e:
             logger.debug(f"Search suggestions failed: {e}")
             return []
+    
+    # AI Generation Methods
+    
+    def generate_ai_content(self, template_type: str, context: Dict[str, Any], user_preferences: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+        """
+        Generate content using AI based on template and context.
+        
+        Args:
+            template_type: Type of content template to use
+            context: Context data for content generation
+            user_preferences: Optional user preferences for generation
+            
+        Returns:
+            Dictionary with generated content and metadata
+        """
+        data = {
+            "template_type": template_type,
+            "context": context
+        }
+        
+        if user_preferences:
+            data["user_preferences"] = user_preferences
+            
+        return self._make_request("POST", "ai/generate", data=data)
+    
+    def generate_item_description(self, context: Dict[str, Any], user_preferences: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+        """
+        Generate a detailed description for an inventory item using AI.
+        
+        Args:
+            context: Item context (name, category, type, brand, model)
+            user_preferences: Optional user preferences for generation
+            
+        Returns:
+            Dictionary with generated description and metadata
+        """
+        data = {
+            "name": context.get("name", ""),
+            "category": context.get("category"),
+            "item_type": context.get("item_type"),
+            "brand": context.get("brand"),
+            "model": context.get("model")
+        }
+        
+        if user_preferences:
+            data["user_preferences"] = user_preferences
+            
+        return self._make_request("POST", "ai/generate-item-description", data=data)
+    
+    def get_ai_templates(self) -> List[str]:
+        """
+        Get list of available AI content generation templates.
+        
+        Returns:
+            List of available template types
+        """
+        return self._make_request("GET", "ai/templates")
+    
+    def get_ai_health(self) -> Dict[str, Any]:
+        """
+        Check the health and status of the AI generation service.
+        
+        Returns:
+            Dictionary with AI service health information
+        """
+        return self._make_request("GET", "ai/health")
+    
+    def test_ai_generation(self) -> Dict[str, Any]:
+        """
+        Test AI generation functionality with a simple example.
+        
+        Returns:
+            Dictionary with test generation result
+        """
+        return self._make_request("POST", "ai/test")
