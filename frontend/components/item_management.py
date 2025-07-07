@@ -26,6 +26,104 @@ from components.keyboard_shortcuts import (
 logger = logging.getLogger(__name__)
 
 
+def show_ai_generation_interface(api_client: APIClient) -> str:
+    """
+    Show AI generation interface outside of form context.
+    
+    Args:
+        api_client: API client instance
+        
+    Returns:
+        Generated description string or empty string
+    """
+    
+    st.markdown("#### 🤖 AI Description Generator")
+    
+    # Basic inputs for AI generation
+    col1, col2 = st.columns(2)
+    
+    with col1:
+        ai_name = st.text_input("Item Name for AI", help="Name to use for AI description generation", key="ai_name_input")
+        ai_category = st.text_input("Category", help="Category for better AI context", key="ai_category_input")
+    
+    with col2:
+        ai_type = st.selectbox("Item Type", get_item_type_options(), help="Type for AI context", key="ai_type_input")
+        ai_brand = st.text_input("Brand (optional)", help="Brand for more specific description", key="ai_brand_input")
+    
+    # Generation controls
+    col_gen1, col_gen2 = st.columns([1, 3])
+    
+    with col_gen1:
+        if st.button("🚀 Generate Description", type="primary", key="ai_generate_btn"):
+            if ai_name:
+                with st.spinner("🤖 Generating description with AI..."):
+                    context = {
+                        "name": ai_name,
+                        "category": ai_category or "General",
+                        "item_type": ai_type,
+                        "brand": ai_brand,
+                        "model": None
+                    }
+                    
+                    try:
+                        result = safe_api_call(
+                            lambda: api_client.generate_item_description(context),
+                            "Failed to generate description"
+                        )
+                        
+                        if result and result.get("content"):
+                            st.session_state.ai_generated_content = result["content"]
+                            st.session_state.ai_generation_metadata = {
+                                "model": result.get("model", "unknown"),
+                                "tokens": result.get("tokens_used", 0),
+                                "time": result.get("generation_time", 0)
+                            }
+                            st.rerun()
+                        else:
+                            show_error("Failed to generate description. Please try again.")
+                    except Exception as e:
+                        handle_api_error(e, "generate AI description")
+            else:
+                st.warning("Please enter an item name for AI generation")
+    
+    with col_gen2:
+        if st.button("🗑️ Clear Generated Content", key="ai_clear_btn"):
+            if "ai_generated_content" in st.session_state:
+                del st.session_state.ai_generated_content
+            if "ai_generation_metadata" in st.session_state:
+                del st.session_state.ai_generation_metadata
+            st.rerun()
+    
+    # Show generated content if available
+    if "ai_generated_content" in st.session_state:
+        st.markdown("#### Generated Description")
+        
+        # Show metadata
+        if "ai_generation_metadata" in st.session_state:
+            metadata = st.session_state.ai_generation_metadata
+            col_meta1, col_meta2, col_meta3 = st.columns(3)
+            with col_meta1:
+                st.metric("Model", metadata.get("model", "Unknown"))
+            with col_meta2:
+                st.metric("Tokens", metadata.get("tokens", 0))
+            with col_meta3:
+                st.metric("Time", f"{metadata.get('time', 0):.1f}s")
+        
+        # Editable content
+        generated_content = st.text_area(
+            "Generated Description (you can edit):",
+            value=st.session_state.ai_generated_content,
+            height=150,
+            key="ai_content_editor"
+        )
+        
+        st.success("✅ Description generated! This will be used in the form below.")
+        
+        return generated_content
+    
+    return ""
+
+
 def create_item_dataframe(items: List[Dict], show_inventory: bool = True) -> pd.DataFrame:
     """Create a pandas DataFrame from items data with inventory information."""
     if not items:
@@ -122,7 +220,7 @@ def safe_api_call_with_success(func, success_message: str, error_message: str):
 
 def create_item_form(api_client: APIClient, create_with_location: bool = True) -> bool:
     """
-    Create comprehensive item creation form.
+    Create comprehensive item creation form with optional AI generation.
     
     Args:
         api_client: API client instance
@@ -152,28 +250,35 @@ def create_item_form(api_client: APIClient, create_with_location: bool = True) -
             st.rerun()
         return False
     
-    # Item creation form
+    # Phase 1: AI Generation Options (outside form)
+    st.markdown("### ➕ Create New Item")
+    
+    # Creation workflow options
+    col_option1, col_option2 = st.columns(2)
+    
+    with col_option1:
+        enable_location_assignment = st.checkbox(
+            "📍 Assign to Location", 
+            value=create_with_location,
+            help="Check to automatically assign this item to a location and track inventory",
+            key="enable_location_assignment"
+        )
+    
+    with col_option2:
+        enable_ai_generation = st.checkbox(
+            "🤖 Enable AI Description",
+            value=False,
+            help="Generate description using AI before filling out the form",
+            key="enable_ai_generation"
+        )
+    
+    # AI Generation Interface (outside form)
+    ai_generated_description = ""
+    if enable_ai_generation:
+        ai_generated_description = show_ai_generation_interface(api_client)
+    
+    # Phase 2: Item Creation Form (form-only elements)
     with st.form("create_item_form", clear_on_submit=True):
-        st.markdown("### ➕ Create New Item")
-        
-        # Options for creation workflow
-        col_option1, col_option2 = st.columns(2)
-        
-        with col_option1:
-            if locations:
-                create_with_location = st.checkbox(
-                    "📍 Assign to Location", 
-                    value=create_with_location,
-                    help="Check to automatically assign this item to a location and track inventory"
-                )
-        
-        with col_option2:
-            enable_ai_generation = st.checkbox(
-                "🤖 Enable AI Description",
-                value=False,
-                help="Show AI-powered description generation option"
-            )
-        
         # Main form sections
         col1, col2 = st.columns(2)
         
@@ -185,30 +290,17 @@ def create_item_form(api_client: APIClient, create_with_location: bool = True) -
             item_types = get_item_type_options()
             item_type = st.selectbox("Item Type*", item_types, help="Select the primary type")
             
-            # Description field with optional AI generation
+            # Description field (with AI-generated content if available)
             st.markdown("**Description**")
-            description = st.text_area("Description", help="Optional description of the item", key="item_description_field")
+            description = st.text_area(
+                "Description", 
+                value=ai_generated_description,
+                help="Optional description of the item",
+                key="item_description_field"
+            )
             
-            # AI generation for description (only if enabled)
-            if enable_ai_generation:
-                from components.ai_generation import ai_item_description_generator
-                ai_description = ai_item_description_generator(
-                    api_client=api_client,
-                    name=name,
-                    category=None,  # Category selected later in form
-                    item_type=item_type,
-                    brand=None,  # Brand set later in form
-                    model=None,  # Model set later in form
-                    key_prefix="create_item_ai"
-                )
-                
-                # If AI generated content, update the description field
-                if ai_description:
-                    st.session_state.item_description_field = ai_description
-                    st.rerun()
-            else:
-                # Show hint when AI generation is disabled
-                st.caption("💡 Enable 'AI Description' above to use AI-powered description generation")
+            if enable_ai_generation and not ai_generated_description:
+                st.caption("💡 Use the AI generation interface above to create a description")
             
             # Condition and status
             conditions = get_condition_options()
@@ -221,7 +313,7 @@ def create_item_form(api_client: APIClient, create_with_location: bool = True) -
             selected_location_id = None
             quantity = 1
             
-            if create_with_location and locations:
+            if enable_location_assignment and locations:
                 st.markdown("**📍 Location & Inventory**")
                 location_options = {loc['id']: f"{loc['name']} ({loc.get('location_type', '').title()})" for loc in locations}
                 selected_location_id = st.selectbox(
@@ -292,7 +384,7 @@ def create_item_form(api_client: APIClient, create_with_location: bool = True) -
                 show_error("Item name is required.")
                 return False
             
-            if create_with_location and not selected_location_id:
+            if enable_location_assignment and not selected_location_id:
                 show_error("Location is required when creating with location assignment.")
                 return False
             
@@ -320,7 +412,7 @@ def create_item_form(api_client: APIClient, create_with_location: bool = True) -
             }
             
             # Add location data if creating with location
-            if create_with_location and selected_location_id:
+            if enable_location_assignment and selected_location_id:
                 item_data.update({
                     "location_id": selected_location_id,
                     "quantity": quantity
@@ -328,7 +420,7 @@ def create_item_form(api_client: APIClient, create_with_location: bool = True) -
             
             # Create item via API
             try:
-                if create_with_location and selected_location_id:
+                if enable_location_assignment and selected_location_id:
                     # Create item with location assignment
                     result = api_client.create_item_with_location(item_data)
                     success_message = f"✅ Item '{name}' created and assigned to location successfully!"
@@ -339,6 +431,13 @@ def create_item_form(api_client: APIClient, create_with_location: bool = True) -
                 
                 if result:
                     show_success(success_message)
+                    
+                    # Clean up AI generation session state
+                    if "ai_generated_content" in st.session_state:
+                        del st.session_state.ai_generated_content
+                    if "ai_generation_metadata" in st.session_state:
+                        del st.session_state.ai_generation_metadata
+                    
                     st.balloons()
                     return True
                 else:
