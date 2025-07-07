@@ -728,19 +728,11 @@ def delete_item_action(item_id: int, item_name: str, permanent: bool, api_client
     """
     try:
         with st.spinner(f"Deleting {item_name}..."):
-            # Call the delete API with permanent flag
-            if permanent:
-                # For permanent delete, we need to call the API with the permanent parameter
-                success = safe_api_call(
-                    lambda: api_client._make_request("DELETE", f"items/{item_id}", params={"permanent": True}),
-                    f"Failed to permanently delete item: {item_name}"
-                )
-            else:
-                # For soft delete, use the standard delete method
-                success = safe_api_call(
-                    lambda: api_client.delete_item(item_id),
-                    f"Failed to delete item: {item_name}"
-                )
+            # Use the consistent delete_item method for both soft and permanent delete
+            success = safe_api_call(
+                lambda: api_client.delete_item(item_id, permanent=permanent),
+                f"Failed to {'permanently ' if permanent else ''}delete item: {item_name}"
+            )
             
             if success:
                 delete_type = "permanently deleted" if permanent else "deleted"

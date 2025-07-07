@@ -475,10 +475,13 @@ class APIClient:
         """Update an existing item."""
         return self._make_request("PUT", f"items/{item_id}", data=item_data)
     
-    def delete_item(self, item_id: int) -> bool:
-        """Delete an item."""
+    def delete_item(self, item_id: int, permanent: bool = False) -> bool:
+        """Delete an item (soft delete by default, permanent if specified)."""
         try:
-            self._make_request("DELETE", f"items/{item_id}")
+            if permanent:
+                self._make_request("DELETE", f"items/{item_id}", params={"permanent": True})
+            else:
+                self._make_request("DELETE", f"items/{item_id}")
             return True
         except APIError:
             return False
