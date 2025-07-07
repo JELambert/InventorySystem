@@ -336,19 +336,12 @@ def show_location_children(location_id: int):
         handle_api_error(e, "load child locations")
 
 def show_delete_confirmation(location_id: int, location_name: str):
-    """Show delete confirmation dialog."""
-    st.warning(f"⚠️ Are you sure you want to delete '{location_name}'?")
-    st.write("This action cannot be undone and will also delete all child locations.")
-    
-    col1, col2 = st.columns(2)
-    
-    with col1:
-        if st.button("✅ Yes, Delete", key=f"confirm_delete_{location_id}", type="primary"):
-            delete_location(location_id, location_name)
-    
-    with col2:
-        if st.button("❌ Cancel", key=f"cancel_delete_{location_id}"):
-            st.rerun()
+    """Show delete confirmation dialog using session state."""
+    # Set session state to show confirmation dialog
+    SessionManager.set('show_delete_confirmation', True)
+    SessionManager.set('delete_location_id', location_id)
+    SessionManager.set('delete_location_name', location_name)
+    st.rerun()
 
 def delete_location(location_id: int, location_name: str):
     """Delete a location."""
@@ -360,12 +353,51 @@ def delete_location(location_id: int, location_name: str):
         
         if success:
             show_success(f"Location '{location_name}' deleted successfully")
+            # Clear session state
+            SessionManager.clear('show_delete_confirmation')
+            SessionManager.clear('delete_location_id')
+            SessionManager.clear('delete_location_name')
             st.rerun()
         else:
             show_error("Failed to delete location")
             
     except Exception as e:
         handle_api_error(e, f"delete location '{location_name}'")
+
+def render_delete_confirmation_dialog():
+    """Render the delete confirmation dialog when needed."""
+    if not SessionManager.get('show_delete_confirmation', False):
+        return
+    
+    location_id = SessionManager.get('delete_location_id')
+    location_name = SessionManager.get('delete_location_name')
+    
+    if not location_id or not location_name:
+        # Clear invalid state
+        SessionManager.clear('show_delete_confirmation')
+        SessionManager.clear('delete_location_id')
+        SessionManager.clear('delete_location_name')
+        return
+    
+    # Display confirmation dialog
+    st.markdown("---")
+    st.error(f"⚠️ **Delete Confirmation Required**")
+    st.warning(f"Are you sure you want to delete location '{location_name}'?")
+    st.write("⚠️ **This action cannot be undone and will also delete all child locations and their inventory entries.**")
+    
+    col1, col2, col3 = st.columns([1, 1, 2])
+    
+    with col1:
+        if st.button("🗑️ Delete", key="confirm_location_delete", type="primary"):
+            delete_location(location_id, location_name)
+    
+    with col2:
+        if st.button("❌ Cancel", key="cancel_location_delete"):
+            # Clear session state
+            SessionManager.clear('show_delete_confirmation')
+            SessionManager.clear('delete_location_id')
+            SessionManager.clear('delete_location_name')
+            st.rerun()
 
 def main():
     """Main locations page function."""
@@ -469,6 +501,9 @@ def main():
         if new_page != page:
             st.session_state.current_page = new_page
             st.rerun()
+    
+    # Render delete confirmation dialog if needed
+    render_delete_confirmation_dialog()
     
     # Enhanced quick actions
     st.markdown("---")
