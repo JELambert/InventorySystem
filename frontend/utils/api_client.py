@@ -1310,3 +1310,27 @@ class APIClient:
             Dictionary with test generation result
         """
         return self._make_request("POST", "ai/test")
+    
+    def enrich_item_data(self, context: Dict[str, Any], user_preferences: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+        """
+        Generate comprehensive item data enrichment including multiple fields.
+        
+        Args:
+            context: Item context (name, category, type, brand, model)
+            user_preferences: Optional user preferences for generation
+            
+        Returns:
+            Dictionary with enriched item data and confidence scores
+        """
+        data = {
+            "name": context.get("name", ""),
+            "category": context.get("category"),
+            "item_type": context.get("item_type"),
+            "brand": context.get("brand"),
+            "model": context.get("model")
+        }
+        
+        if user_preferences:
+            data["user_preferences"] = user_preferences
+            
+        return self._make_request("POST", "ai/enrich-item-data", data=data)

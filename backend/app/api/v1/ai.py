@@ -35,6 +35,16 @@ class ItemDescriptionRequest(BaseModel):
     user_preferences: Optional[Dict[str, Any]] = Field(None, description="User preferences for generation")
 
 
+class ItemDataEnrichmentRequest(BaseModel):
+    """Request model for comprehensive item data enrichment."""
+    name: str = Field(..., description="Item name", min_length=1, max_length=255)
+    category: Optional[str] = Field(None, description="Item category")
+    item_type: Optional[str] = Field(None, description="Type of item")
+    brand: Optional[str] = Field(None, description="Known brand name")
+    model: Optional[str] = Field(None, description="Known model name/number")
+    user_preferences: Optional[Dict[str, Any]] = Field(None, description="User preferences for generation")
+
+
 class AIGenerationResponse(BaseModel):
     """Response model for AI content generation."""
     content: str = Field(..., description="Generated content")
@@ -43,6 +53,18 @@ class AIGenerationResponse(BaseModel):
     tokens_used: int = Field(..., description="Number of tokens consumed")
     generation_time: float = Field(..., description="Generation time in seconds")
     timestamp: str = Field(..., description="Generation timestamp")
+
+
+class ItemDataEnrichmentResponse(BaseModel):
+    """Response model for comprehensive item data enrichment."""
+    refined_name: Optional[str] = Field(None, description="Improved/standardized item name")
+    brand: Optional[str] = Field(None, description="Identified or likely brand")
+    model: Optional[str] = Field(None, description="Identified or likely model")
+    item_type: Optional[str] = Field(None, description="Validated/corrected item type")
+    estimated_value: Optional[float] = Field(None, description="Estimated current market value in USD")
+    description: Optional[str] = Field(None, description="Detailed item description")
+    confidence_scores: Dict[str, float] = Field(..., description="Confidence scores for each field (0.0-1.0)")
+    metadata: Dict[str, Any] = Field(..., description="Generation metadata (model, tokens, time, etc.)")
 
 
 class AIHealthResponse(BaseModel):
@@ -131,6 +153,52 @@ async def generate_item_description(request: ItemDescriptionRequest) -> AIGenera
     except Exception as e:
         logger.error(f"Failed to generate item description: {e}")
         raise HTTPException(status_code=500, detail="Failed to generate item description")
+
+
+@router.post("/enrich-item-data", response_model=ItemDataEnrichmentResponse)
+async def enrich_item_data(request: ItemDataEnrichmentRequest) -> ItemDataEnrichmentResponse:
+    """
+    Generate comprehensive item data enrichment including multiple fields.
+    
+    This endpoint analyzes basic item information and generates enriched data
+    including refined name, brand/model identification, estimated value, and description.
+    Each field includes confidence scores to help users make informed decisions.
+    """
+    try:
+        ai_service = await get_ai_service()
+        
+        enriched_data = await ai_service.generate_item_data_enrichment(
+            name=request.name,
+            category=request.category,
+            item_type=request.item_type,
+            brand=request.brand,
+            model=request.model,
+            user_preferences=request.user_preferences
+        )
+        
+        # Extract metadata
+        metadata = enriched_data.pop("_metadata", {})
+        
+        return ItemDataEnrichmentResponse(
+            refined_name=enriched_data.get("refined_name"),
+            brand=enriched_data.get("brand"),
+            model=enriched_data.get("model"),
+            item_type=enriched_data.get("item_type"),
+            estimated_value=enriched_data.get("estimated_value"),
+            description=enriched_data.get("description"),
+            confidence_scores=enriched_data.get("confidence_scores", {}),
+            metadata=metadata
+        )
+        
+    except ValueError as e:
+        logger.warning(f"Invalid request for item data enrichment: {e}")
+        raise HTTPException(status_code=400, detail=str(e))
+    except RuntimeError as e:
+        logger.error(f"AI service not available: {e}")
+        raise HTTPException(status_code=503, detail="AI service is not available")
+    except Exception as e:
+        logger.error(f"Failed to enrich item data: {e}")
+        raise HTTPException(status_code=500, detail="Failed to enrich item data")
 
 
 @router.get("/templates", response_model=list[str])

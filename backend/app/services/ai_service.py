@@ -122,6 +122,51 @@ class AIService:
                     "\n"
                     "Please write the description now:"
                 )
+            ),
+            "item_data_enrichment": ContentTemplate(
+                template_type="item_data_enrichment",
+                system_prompt=(
+                    "You are an expert product analyst that enriches inventory item data. "
+                    "You provide comprehensive item information including standardized names, "
+                    "likely manufacturers, model identification, and realistic market value estimates. "
+                    "Always respond with valid JSON format and include confidence scores for your assessments."
+                ),
+                user_prompt_template=(
+                    "Based on the provided item information, generate comprehensive item data:\n"
+                    "\n"
+                    "Input Information:\n"
+                    "Name: {name}\n"
+                    "Category: {category}\n"
+                    "Type: {item_type}\n"
+                    "{brand_info}{model_info}"
+                    "\n"
+                    "Generate a JSON response with the following structure:\n"
+                    "{{\n"
+                    '  "refined_name": "Improved/standardized item name",\n'
+                    '  "brand": "Likely manufacturer (null if uncertain)",\n'
+                    '  "model": "Likely model number/name (null if uncertain)",\n'
+                    '  "item_type": "Validated/corrected item type",\n'
+                    '  "estimated_value": "Estimated current market value in USD (number or null)",\n'
+                    '  "description": "Detailed description (100+ words)",\n'
+                    '  "confidence_scores": {{\n'
+                    '    "refined_name": 0.95,\n'
+                    '    "brand": 0.85,\n'
+                    '    "model": 0.70,\n'
+                    '    "item_type": 0.90,\n'
+                    '    "estimated_value": 0.75,\n'
+                    '    "description": 0.95\n'
+                    "  }}\n"
+                    "}}\n"
+                    "\n"
+                    "Requirements:\n"
+                    "- Use industry knowledge for brand/model inference\n"
+                    "- Provide realistic value estimates based on current market\n"
+                    "- Set confidence scores (0.0-1.0) based on certainty\n"
+                    "- Return null for fields with low confidence (<0.6)\n"
+                    "- Ensure refined_name is clear and standardized\n"
+                    "- Include detailed description with utilities and uses\n"
+                    "- Response must be valid JSON only, no additional text\n"
+                )
             )
         }
     
@@ -249,6 +294,91 @@ class AIService:
         user_preferences = kwargs.get("user_preferences", {})
         
         return await self.generate_content("item_description", context, user_preferences)
+    
+    async def generate_item_data_enrichment(
+        self,
+        name: str,
+        category: Optional[str] = None,
+        item_type: Optional[str] = None,
+        brand: Optional[str] = None,
+        model: Optional[str] = None,
+        **kwargs
+    ) -> Dict[str, Any]:
+        """
+        Generate comprehensive item data enrichment including multiple fields.
+        
+        Args:
+            name: Item name (required)
+            category: Item category
+            item_type: Type of item
+            brand: Brand name (if known)
+            model: Model name/number (if known)
+            **kwargs: Additional context or preferences
+            
+        Returns:
+            Dictionary with enriched item data and confidence scores
+        """
+        context = {
+            "name": name,
+            "category": category or "General",
+            "item_type": item_type or "item",
+            "brand": brand,
+            "model": model
+        }
+        
+        # Extract user preferences from kwargs
+        user_preferences = kwargs.get("user_preferences", {})
+        
+        try:
+            result = await self.generate_content("item_data_enrichment", context, user_preferences)
+            
+            # Parse the JSON response
+            import json
+            try:
+                enriched_data = json.loads(result.content)
+                
+                # Add metadata from the generation result
+                enriched_data["_metadata"] = {
+                    "model": result.model,
+                    "tokens_used": result.tokens_used,
+                    "generation_time": result.generation_time,
+                    "timestamp": result.timestamp.isoformat()
+                }
+                
+                return enriched_data
+                
+            except json.JSONDecodeError as e:
+                logger.error(f"Failed to parse JSON response from AI: {e}")
+                logger.error(f"Raw response: {result.content}")
+                
+                # Fallback: return basic structure with original content as description
+                return {
+                    "refined_name": name,
+                    "brand": brand,
+                    "model": model,
+                    "item_type": item_type or "item",
+                    "estimated_value": None,
+                    "description": result.content,  # Use raw content as description
+                    "confidence_scores": {
+                        "refined_name": 0.5,
+                        "brand": 0.3 if brand else 0.0,
+                        "model": 0.3 if model else 0.0,
+                        "item_type": 0.5,
+                        "estimated_value": 0.0,
+                        "description": 0.8
+                    },
+                    "_metadata": {
+                        "model": result.model,
+                        "tokens_used": result.tokens_used,
+                        "generation_time": result.generation_time,
+                        "timestamp": result.timestamp.isoformat(),
+                        "parse_error": str(e)
+                    }
+                }
+                
+        except Exception as e:
+            logger.error(f"Failed to generate item data enrichment: {e}")
+            raise
     
     def get_available_templates(self) -> List[str]:
         """Get list of available content templates."""

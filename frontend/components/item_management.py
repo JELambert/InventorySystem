@@ -26,37 +26,56 @@ from components.keyboard_shortcuts import (
 logger = logging.getLogger(__name__)
 
 
-def show_ai_generation_interface(api_client: APIClient) -> str:
+def show_ai_generation_interface(api_client: APIClient) -> Dict[str, str]:
     """
-    Show AI generation interface outside of form context.
+    Show AI generation interface outside of form context with multi-field support.
     
     Args:
         api_client: API client instance
         
     Returns:
-        Generated description string or empty string
+        Dictionary with generated field values (description, refined_name, brand, model, item_type, estimated_value)
     """
     
-    st.markdown("#### 🤖 AI Description Generator")
+    st.markdown("#### 🤖 AI Content Generator")
     
     # Basic inputs for AI generation
     col1, col2 = st.columns(2)
     
     with col1:
-        ai_name = st.text_input("Item Name for AI", help="Name to use for AI description generation", key="ai_name_input")
+        ai_name = st.text_input("Item Name for AI", help="Name to use for AI content generation", key="ai_name_input")
         ai_category = st.text_input("Category", help="Category for better AI context", key="ai_category_input")
     
     with col2:
         ai_type = st.selectbox("Item Type", get_item_type_options(), help="Type for AI context", key="ai_type_input")
-        ai_brand = st.text_input("Brand (optional)", help="Brand for more specific description", key="ai_brand_input")
+        ai_brand = st.text_input("Brand (optional)", help="Brand for more specific generation", key="ai_brand_input")
+    
+    # Generation mode selection
+    st.markdown("**Generation Mode**")
+    col_mode1, col_mode2 = st.columns(2)
+    
+    with col_mode1:
+        generation_mode = st.radio(
+            "What to generate:",
+            ["Description Only", "All Fields (Smart)"],
+            help="Choose between simple description or comprehensive field enrichment",
+            key="ai_generation_mode"
+        )
+    
+    with col_mode2:
+        if generation_mode == "All Fields (Smart)":
+            st.info("🧠 Smart mode will auto-populate: Name, Brand, Model, Type, Value, and Description with confidence scores")
+        else:
+            st.info("📝 Simple mode generates description only")
     
     # Generation controls
     col_gen1, col_gen2 = st.columns([1, 3])
     
     with col_gen1:
-        if st.button("🚀 Generate Description", type="primary", key="ai_generate_btn"):
+        generate_button_text = "🚀 Generate All Fields" if generation_mode == "All Fields (Smart)" else "🚀 Generate Description"
+        if st.button(generate_button_text, type="primary", key="ai_generate_btn"):
             if ai_name:
-                with st.spinner("🤖 Generating description with AI..."):
+                with st.spinner("🤖 Generating content with AI..."):
                     context = {
                         "name": ai_name,
                         "category": ai_category or "General",
@@ -66,36 +85,164 @@ def show_ai_generation_interface(api_client: APIClient) -> str:
                     }
                     
                     try:
-                        result = safe_api_call(
-                            lambda: api_client.generate_item_description(context),
-                            "Failed to generate description"
-                        )
-                        
-                        if result and result.get("content"):
-                            st.session_state.ai_generated_content = result["content"]
-                            st.session_state.ai_generation_metadata = {
-                                "model": result.get("model", "unknown"),
-                                "tokens": result.get("tokens_used", 0),
-                                "time": result.get("generation_time", 0)
-                            }
-                            st.rerun()
+                        if generation_mode == "All Fields (Smart)":
+                            # Use the new multi-field enrichment endpoint
+                            result = safe_api_call(
+                                lambda: api_client.enrich_item_data(context),
+                                "Failed to generate enriched data"
+                            )
+                            
+                            if result:
+                                st.session_state.ai_enriched_data = result
+                                st.session_state.ai_generation_metadata = result.get("metadata", {})
+                                st.rerun()
+                            else:
+                                show_error("Failed to generate enriched data. Please try again.")
                         else:
-                            show_error("Failed to generate description. Please try again.")
+                            # Use the simple description generation
+                            result = safe_api_call(
+                                lambda: api_client.generate_item_description(context),
+                                "Failed to generate description"
+                            )
+                            
+                            if result and result.get("content"):
+                                st.session_state.ai_generated_content = result["content"]
+                                st.session_state.ai_generation_metadata = {
+                                    "model": result.get("model", "unknown"),
+                                    "tokens": result.get("tokens_used", 0),
+                                    "time": result.get("generation_time", 0)
+                                }
+                                st.rerun()
+                            else:
+                                show_error("Failed to generate description. Please try again.")
+                                
                     except Exception as e:
-                        handle_api_error(e, "generate AI description")
+                        handle_api_error(e, "generate AI content")
             else:
                 st.warning("Please enter an item name for AI generation")
     
     with col_gen2:
         if st.button("🗑️ Clear Generated Content", key="ai_clear_btn"):
-            if "ai_generated_content" in st.session_state:
-                del st.session_state.ai_generated_content
-            if "ai_generation_metadata" in st.session_state:
-                del st.session_state.ai_generation_metadata
+            for key in ["ai_generated_content", "ai_enriched_data", "ai_generation_metadata"]:
+                if key in st.session_state:
+                    del st.session_state[key]
             st.rerun()
     
     # Show generated content if available
-    if "ai_generated_content" in st.session_state:
+    generated_fields = {}
+    
+    # Multi-field enrichment display
+    if "ai_enriched_data" in st.session_state:
+        enriched_data = st.session_state.ai_enriched_data
+        st.markdown("#### 🧠 AI Generated Fields")
+        
+        # Show metadata
+        if "ai_generation_metadata" in st.session_state:
+            metadata = st.session_state.ai_generation_metadata
+            col_meta1, col_meta2, col_meta3 = st.columns(3)
+            with col_meta1:
+                st.metric("Model", metadata.get("model", "Unknown"))
+            with col_meta2:
+                st.metric("Tokens", metadata.get("tokens_used", 0))
+            with col_meta3:
+                st.metric("Time", f"{metadata.get('generation_time', 0):.1f}s")
+        
+        # Display enriched fields with confidence scores and editing
+        confidence_scores = enriched_data.get("confidence_scores", {})
+        
+        col_field1, col_field2 = st.columns(2)
+        
+        with col_field1:
+            st.markdown("**📝 Content Fields**")
+            
+            # Refined name
+            refined_name = enriched_data.get("refined_name", "")
+            if refined_name:
+                confidence = confidence_scores.get("refined_name", 0.0)
+                st.markdown(f"**Item Name** (confidence: {confidence:.1%})")
+                generated_fields["refined_name"] = st.text_input(
+                    "Refined Name:",
+                    value=refined_name,
+                    help="AI-improved item name",
+                    key="ai_refined_name_editor"
+                )
+            
+            # Brand
+            brand = enriched_data.get("brand", "")
+            if brand:
+                confidence = confidence_scores.get("brand", 0.0)
+                st.markdown(f"**Brand** (confidence: {confidence:.1%})")
+                generated_fields["brand"] = st.text_input(
+                    "Brand:",
+                    value=brand,
+                    help="AI-identified brand",
+                    key="ai_brand_editor"
+                )
+            
+            # Model
+            model = enriched_data.get("model", "")
+            if model:
+                confidence = confidence_scores.get("model", 0.0)
+                st.markdown(f"**Model** (confidence: {confidence:.1%})")
+                generated_fields["model"] = st.text_input(
+                    "Model:",
+                    value=model,
+                    help="AI-identified model",
+                    key="ai_model_editor"
+                )
+        
+        with col_field2:
+            st.markdown("**🏷️ Classification & Value**")
+            
+            # Item type
+            item_type = enriched_data.get("item_type", "")
+            if item_type:
+                confidence = confidence_scores.get("item_type", 0.0)
+                st.markdown(f"**Item Type** (confidence: {confidence:.1%})")
+                item_type_options = get_item_type_options()
+                try:
+                    default_index = item_type_options.index(item_type) if item_type in item_type_options else 0
+                except:
+                    default_index = 0
+                generated_fields["item_type"] = st.selectbox(
+                    "Item Type:",
+                    item_type_options,
+                    index=default_index,
+                    help="AI-classified item type",
+                    key="ai_item_type_editor"
+                )
+            
+            # Estimated value
+            estimated_value = enriched_data.get("estimated_value")
+            if estimated_value is not None:
+                confidence = confidence_scores.get("estimated_value", 0.0)
+                st.markdown(f"**Estimated Value** (confidence: {confidence:.1%})")
+                generated_fields["estimated_value"] = st.number_input(
+                    "Estimated Value ($):",
+                    value=float(estimated_value),
+                    min_value=0.0,
+                    format="%.2f",
+                    help="AI-estimated current market value",
+                    key="ai_estimated_value_editor"
+                )
+        
+        # Description (full width)
+        description = enriched_data.get("description", "")
+        if description:
+            confidence = confidence_scores.get("description", 0.0)
+            st.markdown(f"**📄 Description** (confidence: {confidence:.1%})")
+            generated_fields["description"] = st.text_area(
+                "Description:",
+                value=description,
+                height=120,
+                help="AI-generated detailed description",
+                key="ai_description_editor"
+            )
+        
+        st.success("✅ Multi-field content generated! Values will be used in the form below.")
+    
+    # Simple description display (backward compatibility)
+    elif "ai_generated_content" in st.session_state:
         st.markdown("#### Generated Description")
         
         # Show metadata
@@ -110,7 +257,7 @@ def show_ai_generation_interface(api_client: APIClient) -> str:
                 st.metric("Time", f"{metadata.get('time', 0):.1f}s")
         
         # Editable content
-        generated_content = st.text_area(
+        generated_fields["description"] = st.text_area(
             "Generated Description (you can edit):",
             value=st.session_state.ai_generated_content,
             height=150,
@@ -118,10 +265,8 @@ def show_ai_generation_interface(api_client: APIClient) -> str:
         )
         
         st.success("✅ Description generated! This will be used in the form below.")
-        
-        return generated_content
     
-    return ""
+    return generated_fields
 
 
 def create_item_dataframe(items: List[Dict], show_inventory: bool = True) -> pd.DataFrame:
@@ -273,9 +418,9 @@ def create_item_form(api_client: APIClient, create_with_location: bool = True) -
         )
     
     # AI Generation Interface (outside form)
-    ai_generated_description = ""
+    ai_generated_fields = {}
     if enable_ai_generation:
-        ai_generated_description = show_ai_generation_interface(api_client)
+        ai_generated_fields = show_ai_generation_interface(api_client)
     
     # Phase 2: Item Creation Form (form-only elements)
     with st.form("create_item_form", clear_on_submit=True):
@@ -284,23 +429,33 @@ def create_item_form(api_client: APIClient, create_with_location: bool = True) -
         
         with col1:
             st.markdown("**📋 Basic Information**")
-            name = st.text_input("Item Name*", help="Enter the item name")
             
-            # Item type selection
+            # Use AI-generated refined name if available, otherwise empty
+            default_name = ai_generated_fields.get("refined_name", "")
+            name = st.text_input("Item Name*", value=default_name, help="Enter the item name")
+            
+            # Item type selection (use AI-generated if available)
             item_types = get_item_type_options()
-            item_type = st.selectbox("Item Type*", item_types, help="Select the primary type")
+            default_type_index = 0
+            if ai_generated_fields.get("item_type"):
+                try:
+                    default_type_index = item_types.index(ai_generated_fields["item_type"])
+                except ValueError:
+                    default_type_index = 0
+            item_type = st.selectbox("Item Type*", item_types, index=default_type_index, help="Select the primary type")
             
             # Description field (with AI-generated content if available)
             st.markdown("**Description**")
+            default_description = ai_generated_fields.get("description", "")
             description = st.text_area(
                 "Description", 
-                value=ai_generated_description,
+                value=default_description,
                 help="Optional description of the item",
                 key="item_description_field"
             )
             
-            if enable_ai_generation and not ai_generated_description:
-                st.caption("💡 Use the AI generation interface above to create a description")
+            if enable_ai_generation and not ai_generated_fields:
+                st.caption("💡 Use the AI generation interface above to auto-populate fields")
             
             # Condition and status
             conditions = get_condition_options()
@@ -346,14 +501,24 @@ def create_item_form(api_client: APIClient, create_with_location: bool = True) -
         
         with col2:
             st.markdown("**🏭 Product Information**")
-            brand = st.text_input("Brand", help="Manufacturer or brand name")
-            model = st.text_input("Model", help="Model number or name")
+            
+            # Use AI-generated values if available
+            default_brand = ai_generated_fields.get("brand", "")
+            brand = st.text_input("Brand", value=default_brand, help="Manufacturer or brand name")
+            
+            default_model = ai_generated_fields.get("model", "")
+            model = st.text_input("Model", value=default_model, help="Model number or name")
+            
             serial_number = st.text_input("Serial Number", help="Serial number if available")
             barcode = st.text_input("Barcode/UPC", help="Barcode or UPC if available")
             
             st.markdown("**💰 Value & Dates**")
             purchase_price = st.number_input("Purchase Price ($)", min_value=0.0, format="%.2f", help="Original purchase price")
-            current_value = st.number_input("Current Value ($)", min_value=0.0, format="%.2f", help="Current estimated value")
+            
+            # Use AI-generated estimated value if available
+            default_current_value = ai_generated_fields.get("estimated_value", 0.0)
+            current_value = st.number_input("Current Value ($)", value=default_current_value, min_value=0.0, format="%.2f", help="Current estimated value")
+            
             purchase_date = st.date_input("Purchase Date", value=None, help="When was this item purchased?")
             warranty_expiry = st.date_input("Warranty Expiry", value=None, help="When does the warranty expire?")
         
@@ -433,10 +598,9 @@ def create_item_form(api_client: APIClient, create_with_location: bool = True) -
                     show_success(success_message)
                     
                     # Clean up AI generation session state
-                    if "ai_generated_content" in st.session_state:
-                        del st.session_state.ai_generated_content
-                    if "ai_generation_metadata" in st.session_state:
-                        del st.session_state.ai_generation_metadata
+                    for key in ["ai_generated_content", "ai_enriched_data", "ai_generation_metadata"]:
+                        if key in st.session_state:
+                            del st.session_state[key]
                     
                     st.balloons()
                     return True
