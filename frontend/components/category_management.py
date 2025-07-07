@@ -110,7 +110,7 @@ def create_category_form(category: Optional[dict] = None, mode: str = "create") 
     """Create category creation/edit form."""
     form_title = "✏️ Edit Category" if mode == "edit" else "➕ Create New Category"
     
-    with st.form(f"category_form_{mode}"):
+    with st.form(f"cat_form_{mode}_{category['id'] if category else 'new'}"):
         st.subheader(form_title)
         
         # Category name (required)
@@ -245,14 +245,14 @@ def display_category_card(category: dict, api_client: APIClient, show_actions: b
         if show_actions and col2 and col3:
             with col2:
                 # Edit button
-                if st.button("✏️ Edit", key=f"edit_{category['id']}", help="Edit this category"):
+                if st.button("✏️ Edit", key=f"cat_edit_{category['id']}", help="Edit this category"):
                     SessionManager.set(f"edit_category_{category['id']}", True)
                     st.rerun()
             
             with col3:
                 # Delete/Restore button
                 if category.get("is_active", True):
-                    if st.button("🗑️ Delete", key=f"delete_{category['id']}", help="Delete this category"):
+                    if st.button("🗑️ Delete", key=f"cat_delete_{category['id']}", help="Delete this category"):
                         if safe_api_call_with_success(
                             lambda: api_client.delete_category(category['id']),
                             "Category deleted successfully",
@@ -260,7 +260,7 @@ def display_category_card(category: dict, api_client: APIClient, show_actions: b
                         ):
                             st.rerun()
                 else:
-                    if st.button("🔄 Restore", key=f"restore_{category['id']}", help="Restore this category"):
+                    if st.button("🔄 Restore", key=f"cat_restore_{category['id']}", help="Restore this category"):
                         if safe_api_call_with_success(
                             lambda: api_client.restore_category(category['id']),
                             "Category restored successfully",
@@ -351,7 +351,7 @@ def manage_categories_section(api_client: APIClient):
                                 st.rerun()
                         
                         # Cancel edit button
-                        if st.button("❌ Cancel Edit", key=f"cancel_edit_{category['id']}"):
+                        if st.button("❌ Cancel Edit", key=f"cat_cancel_edit_{category['id']}"):
                             SessionManager.clear(f"edit_category_{category['id']}")
                             st.rerun()
                         

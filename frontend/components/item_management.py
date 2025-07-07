@@ -297,9 +297,9 @@ def display_item_card(item: Dict[str, Any], show_actions: bool = True) -> None:
         
         with col3:
             if show_actions:
-                if st.button("👁️ View", key=f"view_{item.get('id')}"):
+                if st.button("👁️ View", key=f"item_view_{item.get('id')}"):
                     st.session_state[f"show_item_{item.get('id')}"] = True
-                if st.button("✏️ Edit", key=f"edit_{item.get('id')}"):
+                if st.button("✏️ Edit", key=f"item_edit_{item.get('id')}"):
                     st.session_state[f"edit_item_{item.get('id')}"] = True
 
 
