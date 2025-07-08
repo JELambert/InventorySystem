@@ -84,27 +84,51 @@ def show_ai_generation_interface(api_client: APIClient) -> Dict[str, str]:
         if photo_data:
             # Analyze photo button
             if st.button("🤖 Analyze Photo with AI", type="primary", key="ai_analyze_photo_btn"):
-                with st.spinner("📸 Analyzing photo with AI..."):
+                # Enhanced progress indicator
+                progress_container = st.container()
+                with progress_container:
+                    st.info("🔄 **Starting AI photo analysis...**")
+                    progress_bar = st.progress(0)
+                    status_text = st.empty()
+                    
                     try:
+                        # Progress updates
+                        status_text.text("📤 Uploading image to AI service...")
+                        progress_bar.progress(25)
+                        
                         # Call photo analysis API endpoint
                         result = safe_api_call(
                             lambda: api_client.analyze_item_image(
                                 image_data=photo_data["data"],
-                                image_format=f"image/{photo_data['format'].lower()}",
+                                image_format=photo_data.get("mime_type", f"image/{photo_data['format'].lower()}"),
                                 context_hints=photo_data.get("context_hints", {})
                             ),
                             "Failed to analyze photo"
                         )
                         
+                        progress_bar.progress(75)
+                        status_text.text("🧠 Processing AI analysis results...")
+                        
+                        import time
+                        time.sleep(0.5)  # Brief pause for better UX
+                        
                         if result:
+                            progress_bar.progress(100)
+                            status_text.success("✅ Photo analysis complete!")
+                            
                             st.session_state.ai_enriched_data = result
                             st.session_state.ai_generation_metadata = result.get("metadata", {})
                             st.session_state.ai_photo_data = photo_data
                             st.rerun()
                         else:
-                            show_error("Failed to analyze photo. Please try again.")
+                            progress_bar.empty()
+                            status_text.empty()
+                            show_error("❌ **Photo analysis failed**\n\nPlease check that your image is clear and try again. You can also try a different photo or contact support if the issue persists.")
                             
                     except Exception as e:
+                        progress_bar.empty()
+                        status_text.empty()
+                        st.error("❌ **Analysis Error**")
                         handle_api_error(e, "analyze photo")
         
         # Clear button for photo mode

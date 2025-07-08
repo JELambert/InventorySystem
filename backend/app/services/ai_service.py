@@ -501,8 +501,11 @@ Focus on:
 
 Return ONLY valid JSON with no additional text."""
 
-            # Get model from user preferences
-            model = user_preferences.get("model", "gpt-4-vision-preview") if user_preferences else "gpt-4-vision-preview"
+            # Get model from user preferences - use latest vision model
+            default_vision_model = "gpt-4o"  # Updated to latest vision-capable model
+            model = user_preferences.get("model", default_vision_model) if user_preferences else default_vision_model
+            
+            logger.info(f"Using vision model: {model} for image analysis")
             
             # Create vision API call
             response = await self._openai_client.chat.completions.create(
@@ -567,8 +570,18 @@ Return ONLY valid JSON with no additional text."""
             return result_data
             
         except Exception as e:
-            logger.error(f"Failed to analyze image: {e}")
-            raise
+            logger.error(f"Failed to analyze image with model {model}: {e}")
+            logger.error(f"Image details: {len(image_data)} bytes, format: {image_format}")
+            
+            # Provide more specific error information
+            if "model" in str(e).lower():
+                raise RuntimeError(f"Vision model '{model}' not available or not supported")
+            elif "rate limit" in str(e).lower():
+                raise RuntimeError("OpenAI API rate limit exceeded. Please try again later")
+            elif "api key" in str(e).lower() or "unauthorized" in str(e).lower():
+                raise RuntimeError("OpenAI API authentication failed. Please check API key")
+            else:
+                raise RuntimeError(f"Image analysis failed: {str(e)}")
 
 
 # Global service instance

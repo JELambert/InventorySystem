@@ -1377,6 +1377,12 @@ class APIClient:
         url = f"{self.base_url}/ai/analyze-item-image"
         correlation_id = self._generate_correlation_id()
         
+        # Enhanced logging for debugging
+        logger.info(f"Starting image analysis request: {correlation_id}")
+        logger.info(f"Image size: {len(image_data)} bytes, format: {image_format}")
+        logger.info(f"Context hints: {context_hints}")
+        logger.info(f"Form data keys: {list(form_data.keys())}")
+        
         try:
             headers = {
                 "Accept": "application/json",
@@ -1390,27 +1396,46 @@ class APIClient:
                 files=files,
                 data=form_data,
                 headers=headers,
-                timeout=self.timeout
+                timeout=60  # Increase timeout for vision analysis
             )
+            
+            logger.info(f"Response status: {response.status_code}")
+            logger.info(f"Response headers: {dict(response.headers)}")
             
             # Record request stats
             duration = getattr(response, 'elapsed', timedelta()).total_seconds()
             self._record_request_stats("ai/analyze-item-image", "POST", response.ok, duration)
             
             if response.status_code == 200:
-                return response.json()
+                result = response.json()
+                logger.info(f"Image analysis successful: {len(str(result))} chars response")
+                return result
             else:
-                error_msg = f"Image analysis failed: {response.status_code}"
+                # Enhanced error reporting
+                error_msg = f"Image analysis failed with status {response.status_code}"
+                error_details = {"status_code": response.status_code, "url": url}
+                
                 try:
-                    error_detail = response.json().get('detail', 'Unknown error')
+                    response_data = response.json()
+                    error_details.update(response_data)
+                    error_detail = response_data.get('detail', 'Unknown error')
                     error_msg = f"Image analysis failed: {error_detail}"
-                except:
-                    pass
+                except Exception as parse_error:
+                    error_details["response_text"] = response.text[:500]  # First 500 chars
+                    error_details["parse_error"] = str(parse_error)
+                    logger.error(f"Failed to parse error response: {parse_error}")
                 
                 logger.error(f"Image analysis API error: {error_msg}")
-                raise APIError(error_msg, response.status_code, response.json() if response.headers.get('content-type', '').startswith('application/json') else {})
+                logger.error(f"Error details: {error_details}")
+                raise APIError(error_msg, response.status_code, error_details)
                 
         except requests.exceptions.RequestException as e:
-            error_msg = f"Failed to analyze image: {str(e)}"
-            logger.error(error_msg)
+            error_msg = f"Network error during image analysis: {str(e)}"
+            logger.error(f"{error_msg} (correlation_id: {correlation_id})")
+            logger.error(f"Request details - URL: {url}, Image size: {len(image_data)} bytes")
+            raise APIError(error_msg)
+        except Exception as e:
+            error_msg = f"Unexpected error during image analysis: {str(e)}"
+            logger.error(f"{error_msg} (correlation_id: {correlation_id})")
+            logger.error(f"Error type: {type(e).__name__}")
             raise APIError(error_msg)

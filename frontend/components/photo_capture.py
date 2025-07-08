@@ -127,7 +127,8 @@ def show_photo_capture_interface(key_prefix: str = "photo") -> Optional[Dict[str
                 "source": "camera",
                 "data": camera_photo.getvalue(),
                 "name": f"camera_capture_{key_prefix}.jpg",
-                "format": "JPEG"
+                "format": "JPEG",
+                "mime_type": "image/jpeg"
             }
     
     else:
@@ -147,7 +148,8 @@ def show_photo_capture_interface(key_prefix: str = "photo") -> Optional[Dict[str
                 "source": "upload",
                 "data": uploaded_file.getvalue(),
                 "name": uploaded_file.name,
-                "format": uploaded_file.type.split('/')[-1].upper()
+                "format": uploaded_file.type.split('/')[-1].upper(),
+                "mime_type": uploaded_file.type
             }
     
     # Process and display photo if captured

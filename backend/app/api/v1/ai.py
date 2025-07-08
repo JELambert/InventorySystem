@@ -216,18 +216,25 @@ async def analyze_item_image(
     condition, and detailed description.
     """
     try:
+        logger.info(f"Starting image analysis - content_type: {image.content_type}, filename: {image.filename}")
+        
         # Validate image file
         if not image.content_type or not image.content_type.startswith('image/'):
-            raise HTTPException(status_code=400, detail="File must be an image")
+            logger.warning(f"Invalid content type: {image.content_type}")
+            raise HTTPException(status_code=400, detail=f"File must be an image, got: {image.content_type}")
         
         # Check file size (10MB limit)
         if hasattr(image, 'size') and image.size > 10 * 1024 * 1024:
+            logger.warning(f"Image too large: {image.size} bytes")
             raise HTTPException(status_code=400, detail="Image file too large (max 10MB)")
         
         # Read image data
         image_data = await image.read()
         if len(image_data) == 0:
+            logger.error("Empty image file received")
             raise HTTPException(status_code=400, detail="Empty image file")
+        
+        logger.info(f"Image data read successfully: {len(image_data)} bytes")
         
         # Parse context hints if provided
         context_data = {}
@@ -246,14 +253,18 @@ async def analyze_item_image(
                 logger.warning(f"Invalid user preferences JSON: {user_preferences}")
         
         # Get AI service and analyze image
+        logger.info("Getting AI service for image analysis")
         ai_service = await get_ai_service()
         
+        logger.info(f"Starting AI analysis with context: {context_data}")
         enriched_data = await ai_service.analyze_item_from_image(
             image_data=image_data,
             image_format=image.content_type,
             context_hints=context_data,
             user_preferences=preferences_data
         )
+        
+        logger.info(f"AI analysis completed successfully, extracted {len(enriched_data)} fields")
         
         # Extract metadata
         metadata = enriched_data.pop("_metadata", {})
@@ -274,13 +285,21 @@ async def analyze_item_image(
         raise
     except ValueError as e:
         logger.warning(f"Invalid request for image analysis: {e}")
-        raise HTTPException(status_code=400, detail=str(e))
+        raise HTTPException(status_code=400, detail=f"Invalid request: {str(e)}")
     except RuntimeError as e:
-        logger.error(f"AI service not available: {e}")
-        raise HTTPException(status_code=503, detail="AI service is not available")
+        error_msg = str(e)
+        logger.error(f"AI service error: {error_msg}")
+        if "not available" in error_msg or "not supported" in error_msg:
+            raise HTTPException(status_code=503, detail=f"AI service unavailable: {error_msg}")
+        elif "rate limit" in error_msg:
+            raise HTTPException(status_code=429, detail="Rate limit exceeded. Please try again later")
+        elif "authentication" in error_msg or "api key" in error_msg:
+            raise HTTPException(status_code=503, detail="AI service authentication error")
+        else:
+            raise HTTPException(status_code=500, detail=f"AI analysis failed: {error_msg}")
     except Exception as e:
-        logger.error(f"Failed to analyze image: {e}")
-        raise HTTPException(status_code=500, detail="Failed to analyze image")
+        logger.error(f"Unexpected error during image analysis: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Internal server error: {str(e)[:100]}")
 
 
 @router.get("/templates", response_model=list[str])
