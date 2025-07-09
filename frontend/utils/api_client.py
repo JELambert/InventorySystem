@@ -567,7 +567,30 @@ class APIClient:
         if max_value is not None:
             params["max_value"] = max_value
         
-        return self._make_request("GET", "inventory/", params=params)
+        logger.debug(f"Getting inventory with params: {params}")
+        result = self._make_request("GET", "inventory/", params=params)
+        
+        # Validate response
+        if not isinstance(result, list):
+            logger.error(f"Invalid inventory response format: expected list, got {type(result)}")
+            raise ValueError("Invalid inventory response format")
+        
+        # Validate each entry
+        for entry in result:
+            if not isinstance(entry, dict):
+                logger.error(f"Invalid inventory entry format: expected dict, got {type(entry)}")
+                continue
+            
+            # Ensure required fields exist
+            if 'id' not in entry:
+                logger.warning(f"Inventory entry missing ID: {entry}")
+            if 'item_id' not in entry:
+                logger.warning(f"Inventory entry missing item_id: {entry}")
+            if 'location_id' not in entry:
+                logger.warning(f"Inventory entry missing location_id: {entry}")
+                
+        logger.debug(f"Retrieved {len(result)} inventory entries")
+        return result
     
     def get_inventory_entry(self, inventory_id: int) -> dict:
         """Get a specific inventory entry by ID."""
@@ -641,18 +664,36 @@ class APIClient:
         for item in items:
             try:
                 inventory_entries = self.get_inventory(item_id=item['id'])
+                logger.debug(f"Retrieved {len(inventory_entries)} inventory entries for item {item['id']}")
+                
                 # Add location details to inventory entries
                 for entry in inventory_entries:
                     if entry.get('location_id'):
                         try:
                             location = self.get_location(entry['location_id'])
                             entry['location'] = location
-                        except:
+                            logger.debug(f"Added location {location.get('name')} to inventory entry")
+                        except APIError as e:
+                            logger.warning(f"Failed to load location {entry['location_id']}: {e}")
                             entry['location'] = {'name': 'Unknown Location', 'id': entry['location_id']}
+                            entry['location_error'] = str(e)
+                        except Exception as e:
+                            logger.error(f"Unexpected error loading location {entry['location_id']}: {e}")
+                            entry['location'] = {'name': 'Error Loading Location', 'id': entry['location_id']}
+                            entry['location_error'] = str(e)
                 
                 item['inventory_entries'] = inventory_entries
-            except:
-                item['inventory_entries'] = []
+                
+            except APIError as e:
+                logger.error(f"API error loading inventory for item {item['id']}: {e}")
+                item['inventory_entries'] = None  # Distinguish from empty array
+                item['inventory_error'] = str(e)
+                item['inventory_error_type'] = 'api_error'
+            except Exception as e:
+                logger.error(f"Unexpected error loading inventory for item {item['id']}: {e}")
+                item['inventory_entries'] = None
+                item['inventory_error'] = str(e)
+                item['inventory_error_type'] = 'unexpected_error'
         
         return items
     

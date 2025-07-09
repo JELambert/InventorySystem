@@ -312,17 +312,52 @@ def create_item_dataframe(items: List[Dict], show_inventory: bool = True) -> pd.
         
         # Add inventory information if requested
         if show_inventory:
-            inventory_entries = item.get("inventory_entries", [])
-            if inventory_entries:
+            inventory_entries = item.get("inventory_entries")
+            
+            # Handle inventory loading errors
+            if inventory_entries is None:
+                inventory_error = item.get("inventory_error", "Unknown error")
+                error_type = item.get("inventory_error_type", "unknown")
+                
+                if error_type == "api_error":
+                    row["Locations"] = "⚠️ API Error loading inventory"
+                elif error_type == "unexpected_error":
+                    row["Locations"] = "❌ Error loading inventory"
+                else:
+                    row["Locations"] = "⚠️ Failed to load inventory"
+                
+                row["Total Quantity"] = "Error"
+                row["_inventory_error"] = inventory_error  # Store for debugging
+                
+            elif inventory_entries:
                 locations = []
                 total_quantity = 0
+                location_errors = []
+                
                 for entry in inventory_entries:
                     if entry.get("location"):
-                        locations.append(f"{entry['location']['name']} ({entry.get('quantity', 1)})")
+                        location_name = entry['location']['name']
+                        quantity = entry.get('quantity', 1)
+                        
+                        # Check for location loading errors
+                        if entry.get("location_error"):
+                            location_name = f"{location_name} ⚠️"
+                            location_errors.append(entry["location_error"])
+                        
+                        locations.append(f"{location_name} ({quantity})")
+                        total_quantity += quantity
+                    else:
+                        # Entry without location data
+                        locations.append(f"Unknown Location ({entry.get('quantity', 1)})")
                         total_quantity += entry.get('quantity', 1)
                 
                 row["Locations"] = ", ".join(locations)
                 row["Total Quantity"] = total_quantity
+                
+                # Store location errors for debugging
+                if location_errors:
+                    row["_location_errors"] = location_errors
+                    
             else:
                 row["Locations"] = "Not in inventory"
                 row["Total Quantity"] = 0
@@ -394,15 +429,37 @@ def display_item_details(item: Dict):
     st.subheader("📍 Location Information")
     
     # Use inventory data from item if available, otherwise make API call
-    inventory_entries = item.get("inventory_entries", [])
+    inventory_entries = item.get("inventory_entries")
+    inventory_error = item.get("inventory_error")
     
-    if not inventory_entries:
-        # Fallback to API call if inventory data not included
-        api_client = APIClient()
-        inventory_entries = safe_api_call(
-            lambda: api_client.get_inventory(item_id=item.get("id")),
-            "Failed to load item inventory"
-        ) or []
+    # Handle inventory loading errors
+    if inventory_entries is None:
+        if inventory_error:
+            error_type = item.get("inventory_error_type", "unknown")
+            if error_type == "api_error":
+                st.error(f"⚠️ **API Error**: {inventory_error}")
+            else:
+                st.error(f"❌ **Error**: {inventory_error}")
+            
+            # Offer retry option
+            if st.button("🔄 Retry Loading Inventory", key=f"retry_inventory_{item.get('id')}"):
+                with st.spinner("Retrying inventory load..."):
+                    api_client = APIClient()
+                    inventory_entries = safe_api_call(
+                        lambda: api_client.get_inventory(item_id=item.get("id")),
+                        "Failed to load item inventory"
+                    ) or []
+            else:
+                inventory_entries = []
+        else:
+            # Fallback to API call if inventory data not included
+            api_client = APIClient()
+            inventory_entries = safe_api_call(
+                lambda: api_client.get_inventory(item_id=item.get("id")),
+                "Failed to load item inventory"
+            ) or []
+    elif not inventory_entries:
+        inventory_entries = []
     
     if inventory_entries:
         location_df_data = []
@@ -676,6 +733,9 @@ Search Endpoints:
         
         # Get search filters
         filters = create_search_filters()
+        
+        # Debug option for inventory errors
+        debug_mode = st.sidebar.checkbox("🔍 Debug Mode", help="Show detailed error information for troubleshooting")
         
         # Create cache key based on search parameters to detect changes
         current_semantic_enabled = st.session_state.get("semantic_search_enabled", False)
@@ -997,6 +1057,40 @@ Search Endpoints:
                     selection_mode="multi-row",
                     on_select="rerun"
                 )
+                
+                # Debug information for table view
+                if debug_mode:
+                    st.subheader("🔍 Debug Information")
+                    
+                    # Count inventory errors
+                    inventory_errors = [item for item in filtered_items if item.get("inventory_error")]
+                    location_errors = [item for item in filtered_items if item.get("_location_errors")]
+                    
+                    col1, col2, col3 = st.columns(3)
+                    with col1:
+                        st.metric("Total Items", len(filtered_items))
+                    with col2:
+                        st.metric("Inventory Errors", len(inventory_errors))
+                    with col3:
+                        st.metric("Location Errors", len(location_errors))
+                    
+                    # Show specific errors
+                    if inventory_errors:
+                        st.markdown("**Inventory Loading Errors:**")
+                        for item in inventory_errors[:5]:  # Show first 5
+                            error_type = item.get("inventory_error_type", "unknown")
+                            error_msg = item.get("inventory_error", "Unknown error")
+                            st.error(f"Item {item.get('id')} ({item.get('name', 'Unknown')}): {error_type} - {error_msg}")
+                    
+                    if location_errors:
+                        st.markdown("**Location Loading Errors:**")
+                        for item in location_errors[:5]:  # Show first 5
+                            for error in item.get("_location_errors", []):
+                                st.warning(f"Item {item.get('id')} ({item.get('name', 'Unknown')}): {error}")
+                    
+                    # Show raw data for debugging
+                    with st.expander("Raw Item Data (First 2 items)"):
+                        st.json(filtered_items[:2])
                 
                 # Handle row selection for actions
                 if hasattr(selected_items, 'selection') and selected_items.selection.rows:
