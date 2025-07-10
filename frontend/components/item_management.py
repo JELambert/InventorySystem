@@ -385,17 +385,52 @@ def create_item_dataframe(items: List[Dict], show_inventory: bool = True) -> pd.
         
         # Add inventory information if requested
         if show_inventory:
-            inventory_entries = item.get("inventory_entries", [])
-            if inventory_entries:
+            inventory_entries = item.get("inventory_entries")
+            
+            # Handle inventory loading errors
+            if inventory_entries is None:
+                inventory_error = item.get("inventory_error", "Unknown error")
+                error_type = item.get("inventory_error_type", "unknown")
+                
+                if error_type == "api_error":
+                    row["Locations"] = "⚠️ API Error loading inventory"
+                elif error_type == "unexpected_error":
+                    row["Locations"] = "❌ Error loading inventory"
+                else:
+                    row["Locations"] = "⚠️ Failed to load inventory"
+                
+                row["Total Quantity"] = "Error"
+                row["_inventory_error"] = inventory_error  # Store for debugging
+                
+            elif inventory_entries:
                 locations = []
                 total_quantity = 0
+                location_errors = []
+                
                 for entry in inventory_entries:
                     if entry.get("location"):
-                        locations.append(f"{entry['location']['name']} ({entry.get('quantity', 1)})")
+                        location_name = entry['location']['name']
+                        quantity = entry.get('quantity', 1)
+                        
+                        # Check for location loading errors
+                        if entry.get("location_error"):
+                            location_name = f"{location_name} ⚠️"
+                            location_errors.append(entry["location_error"])
+                        
+                        locations.append(f"{location_name} ({quantity})")
+                        total_quantity += quantity
+                    else:
+                        # Entry without location data
+                        locations.append(f"Unknown Location ({entry.get('quantity', 1)})")
                         total_quantity += entry.get('quantity', 1)
                 
                 row["Locations"] = ", ".join(locations)
                 row["Total Quantity"] = total_quantity
+                
+                # Store location errors for debugging
+                if location_errors:
+                    row["_location_errors"] = location_errors
+                    
             else:
                 row["Locations"] = "Not in inventory"
                 row["Total Quantity"] = 0
@@ -901,7 +936,7 @@ def manage_items_section(api_client: APIClient) -> None:
         # Load and display items
         with st.spinner("Loading items..."):
             items_data = safe_api_call(
-                lambda: api_client.get_items(skip=0, limit=50),
+                lambda: api_client.get_items_with_inventory(skip=0, limit=50),
                 "Failed to load items"
             )
         
