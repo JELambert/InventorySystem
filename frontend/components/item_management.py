@@ -971,7 +971,7 @@ def browse_items_section(api_client: APIClient) -> None:
     # Load and display items for browsing
     with st.spinner("Loading items..."):
         items = safe_api_call(
-            lambda: api_client.get_items(skip=0, limit=100),
+            lambda: api_client.get_items_with_inventory(skip=0, limit=100),
             "Failed to load items"
         )
     
