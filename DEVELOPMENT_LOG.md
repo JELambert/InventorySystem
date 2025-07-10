@@ -1,12 +1,62 @@
 # Home Inventory System - Development Log
 
-**Last Updated**: 2025-07-07  
+**Last Updated**: 2025-07-10  
 **Current Phase**: Phase 3 - Production Hardening & Advanced Features (Ready to Begin)  
-**Recent Achievement**: Photo-Based AI Item Generation with GPT-4 Vision
+**Recent Achievement**: Fixed "Not in inventory" Display Issue
 
 ---
 
 ## Completed Tasks
+
+### ✅ Phase 3.7: Fixed "Not in inventory" Display Issue  
+**Completed**: 2025-07-10  
+**Duration**: ~1 hour  
+**Status**: COMPLETE - Location Column Now Shows Correct Inventory Data
+
+#### What Was Built
+
+**🔍 Root Cause Investigation**
+- **Issue Analysis**: Frontend Items page showing "Not in inventory" for all items despite working backend API
+- **Code Path Tracing**: Investigated complete data flow from page load to table display
+- **API Endpoint Verification**: Confirmed backend `/api/v1/items/{id}/inventory` working correctly
+- **Frontend Flow Analysis**: Identified discrepancy between main Items page and browse section
+
+**🛠️ Technical Fix Implementation**
+- **API Call Correction**: Changed `browse_items_section()` to use `get_items_with_inventory()` instead of `get_items()`
+- **Data Enrichment**: Ensured inventory data is loaded and attached to items before display
+- **Location Information**: Fixed location display to show actual location names and quantities
+- **Error Handling**: Maintained existing error handling for inventory loading failures
+
+#### Problem Analysis
+
+**Root Cause**: Code path inconsistency in Items page data loading
+- **Main Items Page**: Uses `get_items_with_inventory()` which enriches items with inventory data
+- **Browse Section**: Was using `get_items()` which returns items WITHOUT inventory information
+- **Result**: Items displayed with empty `inventory_entries` array, triggering "Not in inventory" display logic
+
+**File Modified**: `/frontend/components/item_management.py` (line 974)
+- **Before**: `api_client.get_items(skip=0, limit=100)`
+- **After**: `api_client.get_items_with_inventory(skip=0, limit=100)`
+
+#### Current State
+
+**✅ Working Features**:
+- Location column now displays actual location names and quantities
+- Items show correct inventory information: "Location Name (Quantity)"
+- Multiple location support: Items in multiple locations display properly
+- Error handling preserved for inventory loading failures
+- Consistent behavior between main Items page and browse section
+
+**📊 Testing Verified**:
+- Items page table view shows location information correctly
+- Browse section displays inventory data properly
+- Error cases handled gracefully with appropriate error messages
+- No performance impact from the change
+
+**⚠️ Technical Debt Resolved**:
+- Eliminated code path inconsistency between Items page sections
+- Unified data loading approach across frontend components
+- Improved data consistency and user experience
 
 ### ✅ Phase 3.6: Photo-Based AI Item Generation with GPT-4 Vision  
 **Completed**: 2025-07-07  
