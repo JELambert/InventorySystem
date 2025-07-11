@@ -66,6 +66,7 @@ class InventoryMove(BaseModel):
     from_location_id: int = Field(..., description="Source location ID", gt=0)
     to_location_id: int = Field(..., description="Destination location ID", gt=0)
     quantity: int = Field(..., description="Quantity to move", ge=1)
+    reason: Optional[str] = Field(None, max_length=255, description="Optional reason for the move")
     
     def validate_different_locations(self) -> bool:
         """Validate that source and destination are different."""
