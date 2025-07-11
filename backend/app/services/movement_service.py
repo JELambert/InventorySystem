@@ -21,6 +21,8 @@ from app.schemas.movement_history import (
     MovementHistorySearch, MovementHistorySummary, BulkMovementCreate,
     MovementTypeStats, ItemMovementTimeline
 )
+from app.schemas.item import ItemSummary
+from app.schemas.location import LocationSummary
 
 
 class MovementService:
@@ -28,6 +30,88 @@ class MovementService:
 
     def __init__(self, db: AsyncSession):
         self.db = db
+    
+    def _convert_movement_to_details(self, movement: ItemMovementHistory) -> MovementHistoryWithDetails:
+        """
+        Convert a raw ItemMovementHistory object to MovementHistoryWithDetails schema.
+        
+        Args:
+            movement: Raw database movement object
+            
+        Returns:
+            MovementHistoryWithDetails: Properly serialized movement object
+            
+        Raises:
+            ValueError: If conversion fails due to missing required data
+        """
+        try:
+            # Convert Item to ItemSummary
+            item_summary = None
+            if movement.item:
+                item_summary = ItemSummary(
+                    id=movement.item.id,
+                    name=movement.item.name,
+                    item_type=movement.item.item_type,
+                    condition=movement.item.condition,
+                    status=movement.item.status,
+                    brand=movement.item.brand,
+                    model=movement.item.model,
+                    current_value=movement.item.current_value,
+                    category_id=movement.item.category_id,
+                    created_at=movement.item.created_at
+                )
+            
+            # Convert from_location to LocationSummary
+            from_location_summary = None
+            if movement.from_location:
+                from_location_summary = LocationSummary(
+                    id=movement.from_location.id,
+                    name=movement.from_location.name,
+                    location_type=movement.from_location.location_type,
+                    child_count=0,  # Default for movement history context
+                    item_count=0   # Default for movement history context
+                )
+            
+            # Convert to_location to LocationSummary
+            to_location_summary = None
+            if movement.to_location:
+                to_location_summary = LocationSummary(
+                    id=movement.to_location.id,
+                    name=movement.to_location.name,
+                    location_type=movement.to_location.location_type,
+                    child_count=0,  # Default for movement history context
+                    item_count=0   # Default for movement history context
+                )
+            
+            return MovementHistoryWithDetails(
+                id=movement.id,
+                item_id=movement.item_id,
+                from_location_id=movement.from_location_id,
+                to_location_id=movement.to_location_id,
+                quantity_moved=movement.quantity_moved,
+                quantity_before=movement.quantity_before,
+                quantity_after=movement.quantity_after,
+                movement_type=movement.movement_type,
+                reason=movement.reason,
+                notes=movement.notes,
+                estimated_value=movement.estimated_value,
+                user_id=movement.user_id,
+                system_notes=movement.system_notes,
+                created_at=movement.created_at,
+                movement_description=movement.movement_description,
+                item=item_summary,
+                from_location=from_location_summary,
+                to_location=to_location_summary
+            )
+        except Exception as e:
+            # Log the error with context for debugging
+            import logging
+            logger = logging.getLogger(__name__)
+            logger.error(f"Failed to convert movement {movement.id} to schema: {e}")
+            logger.error(f"Movement data: item_id={movement.item_id}, from_location_id={movement.from_location_id}, to_location_id={movement.to_location_id}")
+            
+            # Re-raise with more context
+            raise ValueError(f"Failed to convert movement history to schema: {e}") from e
 
     async def record_movement(
         self, 
@@ -303,29 +387,11 @@ class MovementService:
             for inv in current_inventory
         ]
         
-        # Convert to response format
-        movement_details = []
-        for movement in movements:
-            movement_details.append(MovementHistoryWithDetails(
-                id=movement.id,
-                item_id=movement.item_id,
-                from_location_id=movement.from_location_id,
-                to_location_id=movement.to_location_id,
-                quantity_moved=movement.quantity_moved,
-                quantity_before=movement.quantity_before,
-                quantity_after=movement.quantity_after,
-                movement_type=movement.movement_type,
-                reason=movement.reason,
-                notes=movement.notes,
-                estimated_value=movement.estimated_value,
-                user_id=movement.user_id,
-                system_notes=movement.system_notes,
-                created_at=movement.created_at,
-                movement_description=movement.movement_description,
-                item=movement.item,
-                from_location=movement.from_location,
-                to_location=movement.to_location
-            ))
+        # Convert to response format using our conversion helper
+        movement_details = [
+            self._convert_movement_to_details(movement)
+            for movement in movements
+        ]
         
         return ItemMovementTimeline(
             item_id=item_id,
@@ -425,12 +491,18 @@ class MovementService:
                 "latest": date_range_row.latest.isoformat() if date_range_row.latest else None
             }
         
+        # Convert recent movements to proper schema objects
+        converted_recent_movements = [
+            self._convert_movement_to_details(movement)
+            for movement in recent_movements
+        ]
+        
         return MovementHistorySummary(
             total_movements=total_movements,
             total_items_moved=int(total_items_moved),
             unique_items=unique_items,
             unique_locations=unique_locations,
             movement_types=movement_types,
-            recent_movements=recent_movements,
+            recent_movements=converted_recent_movements,
             date_range=date_range
         )
