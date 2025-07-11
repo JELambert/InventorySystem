@@ -828,3 +828,322 @@ def _close_add_to_location_modal():
         del st.session_state.target_location_id
     if 'target_location_name' in st.session_state:
         del st.session_state.target_location_name
+
+
+def create_simplified_movement_interface() -> None:
+    """
+    Create a simplified, user-friendly item movement interface.
+    
+    Features:
+    - Smart item selection with search
+    - Current location display
+    - Filtered destination locations
+    - One-click movement process
+    """
+    st.markdown("### 🎯 Quick Item Movement")
+    st.markdown("_Simple and fast item movement between locations_")
+    
+    api_client = APIClient()
+    
+    # Load data with caching
+    @st.cache_data(ttl=300)  # Cache for 5 minutes
+    def load_items_and_locations():
+        items = safe_api_call(
+            lambda: api_client.get_items_with_inventory(),
+            "Failed to load items"
+        ) or []
+        
+        locations = safe_api_call(
+            lambda: api_client.get_locations(skip=0, limit=1000),
+            "Failed to load locations"
+        ) or []
+        
+        return items, locations
+    
+    with st.spinner("Loading items and locations..."):
+        items, locations = load_items_and_locations()
+    
+    if not items:
+        st.warning("No items found. Please add some items first.")
+        return
+    
+    if not locations:
+        st.warning("No locations found. Please add some locations first.")
+        return
+    
+    # Create main movement form
+    with st.container():
+        # Step 1: Item Selection
+        st.markdown("#### 📦 Step 1: Select Item")
+        
+        # Prepare item options with current location info
+        item_options = {}
+        items_with_inventory = []
+        items_without_inventory = []
+        
+        for item in items:
+            item_name = item.get('name', 'Unknown Item')
+            item_type = item.get('item_type', '').replace('_', ' ').title()
+            inventory_entries = item.get('inventory_entries', [])
+            
+            if inventory_entries:
+                # Show current location(s)
+                locations_str = []
+                for entry in inventory_entries:
+                    location = entry.get('location', {})
+                    location_name = location.get('name', 'Unknown Location')
+                    quantity = entry.get('quantity', 1)
+                    locations_str.append(f"{location_name} (Qty: {quantity})")
+                
+                current_locations = ", ".join(locations_str)
+                option_text = f"{item_name} • {item_type} • Currently in: {current_locations}"
+                items_with_inventory.append((item['id'], option_text, item))
+            else:
+                option_text = f"{item_name} • {item_type} • Not in inventory"
+                items_without_inventory.append((item['id'], option_text, item))
+        
+        # Combine items (with inventory first)
+        all_item_options = items_with_inventory + items_without_inventory
+        
+        if not all_item_options:
+            st.error("No items available for movement.")
+            return
+        
+        # Create selectbox
+        selected_item_index = st.selectbox(
+            "Choose an item to move:",
+            range(len(all_item_options)),
+            format_func=lambda x: all_item_options[x][1],
+            key="selected_item_movement"
+        )
+        
+        selected_item_id = all_item_options[selected_item_index][0]
+        selected_item = all_item_options[selected_item_index][2]
+        
+        # Step 2: Current Location Display & Movement Options
+        st.markdown("#### 📍 Step 2: Current Location & Movement")
+        
+        inventory_entries = selected_item.get('inventory_entries', [])
+        
+        if not inventory_entries:
+            # Item not in inventory - allow assignment to location
+            st.info("This item is not currently assigned to any location.")
+            
+            # Location selection for assignment
+            location_options = {loc['id']: f"{loc['name']} ({loc.get('location_type', '').replace('_', ' ').title()})"
+                              for loc in locations}
+            
+            col1, col2 = st.columns([2, 1])
+            
+            with col1:
+                assign_location_id = st.selectbox(
+                    "Assign to location:",
+                    options=list(location_options.keys()),
+                    format_func=lambda x: location_options[x],
+                    key="assign_location"
+                )
+            
+            with col2:
+                assign_quantity = st.number_input(
+                    "Quantity:",
+                    min_value=1,
+                    value=1,
+                    key="assign_quantity"
+                )
+            
+            # Assignment button
+            if st.button("✅ Assign to Location", type="primary", key="assign_item"):
+                with st.spinner("Assigning item to location..."):
+                    result = safe_api_call(
+                        lambda: api_client.create_inventory_entry(
+                            item_id=selected_item_id,
+                            location_id=assign_location_id,
+                            quantity=assign_quantity
+                        ),
+                        "Failed to assign item to location"
+                    )
+                    
+                    if result:
+                        location_name = location_options[assign_location_id]
+                        show_success(f"Successfully assigned {selected_item['name']} to {location_name}!")
+                        st.cache_data.clear()  # Clear cache to refresh data
+                        st.rerun()
+        
+        elif len(inventory_entries) == 1:
+            # Item in single location - simple move
+            entry = inventory_entries[0]
+            current_location = entry.get('location', {})
+            current_location_id = entry.get('location_id')
+            current_location_name = current_location.get('name', 'Unknown Location')
+            current_quantity = entry.get('quantity', 1)
+            
+            # Display current location
+            st.info(f"**Current Location:** {current_location_name} (Quantity: {current_quantity})")
+            
+            # Filter out current location from destinations
+            available_locations = [loc for loc in locations if loc['id'] != current_location_id]
+            
+            if not available_locations:
+                st.warning("No other locations available for movement.")
+                return
+            
+            # Destination selection
+            location_options = {loc['id']: f"{loc['name']} ({loc.get('location_type', '').replace('_', ' ').title()})"
+                              for loc in available_locations}
+            
+            col1, col2 = st.columns([2, 1])
+            
+            with col1:
+                destination_location_id = st.selectbox(
+                    "Move to location:",
+                    options=list(location_options.keys()),
+                    format_func=lambda x: location_options[x],
+                    key="destination_location"
+                )
+            
+            with col2:
+                move_quantity = st.number_input(
+                    "Quantity to move:",
+                    min_value=1,
+                    max_value=current_quantity,
+                    value=min(current_quantity, 1),
+                    key="move_quantity"
+                )
+            
+            # Movement preview
+            destination_name = location_options[destination_location_id]
+            if move_quantity == current_quantity:
+                st.info(f"**Move:** All {move_quantity} units from {current_location_name} to {destination_name}")
+            else:
+                remaining = current_quantity - move_quantity
+                st.info(f"**Move:** {move_quantity} units to {destination_name}, {remaining} remaining in {current_location_name}")
+            
+            # Movement button
+            if st.button("🔄 Move Item", type="primary", key="move_item"):
+                with st.spinner("Moving item..."):
+                    result = safe_api_call(
+                        lambda: api_client.move_item(
+                            item_id=selected_item_id,
+                            from_location_id=current_location_id,
+                            to_location_id=destination_location_id,
+                            quantity=move_quantity
+                        ),
+                        "Failed to move item"
+                    )
+                    
+                    if result:
+                        show_success(f"Successfully moved {move_quantity} units of {selected_item['name']} from {current_location_name} to {destination_name}!")
+                        st.cache_data.clear()  # Clear cache to refresh data
+                        st.rerun()
+        
+        else:
+            # Item in multiple locations - show selection interface
+            st.info(f"This item is in {len(inventory_entries)} locations:")
+            
+            # Display current locations
+            for i, entry in enumerate(inventory_entries):
+                location = entry.get('location', {})
+                location_name = location.get('name', 'Unknown Location')
+                quantity = entry.get('quantity', 1)
+                st.write(f"• {location_name}: {quantity} units")
+            
+            # Source location selection
+            source_options = {}
+            for entry in inventory_entries:
+                location = entry.get('location', {})
+                location_id = entry.get('location_id')
+                location_name = location.get('name', f'Location {location_id}')
+                quantity = entry.get('quantity', 1)
+                source_options[location_id] = f"{location_name} (Qty: {quantity})"
+            
+            col1, col2, col3 = st.columns(3)
+            
+            with col1:
+                source_location_id = st.selectbox(
+                    "Move from:",
+                    options=list(source_options.keys()),
+                    format_func=lambda x: source_options[x],
+                    key="source_location_multi"
+                )
+            
+            # Get max quantity for selected source
+            source_entry = next((e for e in inventory_entries if e.get('location_id') == source_location_id), None)
+            max_quantity = source_entry.get('quantity', 1) if source_entry else 1
+            
+            with col2:
+                # Filter destinations (exclude source location)
+                available_locations = [loc for loc in locations if loc['id'] != source_location_id]
+                dest_options = {loc['id']: f"{loc['name']} ({loc.get('location_type', '').replace('_', ' ').title()})"
+                               for loc in available_locations}
+                
+                destination_location_id = st.selectbox(
+                    "Move to:",
+                    options=list(dest_options.keys()),
+                    format_func=lambda x: dest_options[x],
+                    key="destination_location_multi"
+                )
+            
+            with col3:
+                move_quantity = st.number_input(
+                    "Quantity:",
+                    min_value=1,
+                    max_value=max_quantity,
+                    value=min(max_quantity, 1),
+                    key="move_quantity_multi"
+                )
+            
+            # Movement preview
+            source_name = source_options[source_location_id]
+            destination_name = dest_options[destination_location_id]
+            st.info(f"**Move:** {move_quantity} units from {source_name} to {destination_name}")
+            
+            # Movement button
+            if st.button("🔄 Move Item", type="primary", key="move_item_multi"):
+                with st.spinner("Moving item..."):
+                    result = safe_api_call(
+                        lambda: api_client.move_item(
+                            item_id=selected_item_id,
+                            from_location_id=source_location_id,
+                            to_location_id=destination_location_id,
+                            quantity=move_quantity
+                        ),
+                        "Failed to move item"
+                    )
+                    
+                    if result:
+                        show_success(f"Successfully moved {move_quantity} units of {selected_item['name']} from {source_name.split(' (')[0]} to {destination_name.split(' (')[0]}!")
+                        st.cache_data.clear()  # Clear cache to refresh data
+                        st.rerun()
+        
+        # Quick actions section
+        st.markdown("---")
+        st.markdown("#### ⚡ Quick Actions")
+        
+        col1, col2 = st.columns(2)
+        
+        with col1:
+            if st.button("📋 View Item Details", key="view_details"):
+                with st.expander(f"📦 {selected_item['name']} Details", expanded=True):
+                    col_a, col_b = st.columns(2)
+                    
+                    with col_a:
+                        st.write(f"**Type:** {selected_item.get('item_type', '').replace('_', ' ').title()}")
+                        st.write(f"**Condition:** {selected_item.get('condition', '').replace('_', ' ').title()}")
+                        st.write(f"**Status:** {selected_item.get('status', '').replace('_', ' ').title()}")
+                    
+                    with col_b:
+                        if selected_item.get('brand'):
+                            st.write(f"**Brand:** {selected_item['brand']}")
+                        if selected_item.get('model'):
+                            st.write(f"**Model:** {selected_item['model']}")
+                        if selected_item.get('current_value'):
+                            st.write(f"**Value:** {safe_currency_format(selected_item['current_value'])}")
+                    
+                    if selected_item.get('description'):
+                        st.write(f"**Description:** {selected_item['description']}")
+        
+        with col2:
+            if st.button("🔄 Refresh Data", key="refresh_data"):
+                st.cache_data.clear()
+                show_success("Data refreshed!")
+                st.rerun()

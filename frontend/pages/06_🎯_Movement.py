@@ -22,7 +22,8 @@ from components.item_movement import (
     create_drag_drop_movement_interface,
     create_movement_history_panel,
     create_advanced_quantity_operations_panel,
-    show_movement_modals
+    show_movement_modals,
+    create_simplified_movement_interface
 )
 from components.movement_validation import (
     create_movement_validation_widget,
@@ -65,33 +66,23 @@ def show_movement_page():
     # Enable keyboard shortcuts
     enable_keyboard_shortcuts()
     
-    # Create tabs for different movement features
-    tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs([
-        "🎯 Drag & Drop Movement", 
+    # Create simplified tabs for different movement features
+    tab1, tab2, tab3 = st.tabs([
+        "🎯 Quick Movement", 
         "📊 Movement History", 
-        "⚙️ Advanced Operations",
-        "📈 Movement Analytics",
-        "🔍 Validation",
-        "⚙️ Admin"
+        "⚙️ Advanced Features"
     ])
     
     with tab1:
-        show_drag_drop_interface()
+        # Use the new simplified movement interface
+        create_simplified_movement_interface()
     
     with tab2:
         show_movement_history_interface()
     
     with tab3:
-        show_advanced_operations_interface()
-    
-    with tab4:
-        show_movement_analytics_interface()
-    
-    with tab5:
-        show_validation_interface()
-    
-    with tab6:
-        show_admin_interface()
+        # Combine advanced operations, analytics, validation, and admin
+        show_advanced_features_interface()
     
     # Display movement modals
     show_movement_modals()
@@ -181,71 +172,79 @@ def show_drag_drop_interface():
 
 
 def show_movement_history_interface():
-    """Display the movement history interface."""
+    """Display the simplified movement history interface."""
     st.markdown("### 📊 Movement History & Audit Trail")
     
     api_client = APIClient()
     
-    # History filters section
+    # Simplified filters
     with st.container():
-        st.markdown("#### 🔍 History Filters")
-        
-        # Load items for filtering
-        items = safe_api_call(
-            lambda: api_client.get_items(skip=0, limit=1000),
-            "Failed to load items for filtering"
-        ) or []
-        
-        item_options = {"all": "All Items"}
-        item_options.update({item['id']: f"{item['name']} - {item.get('item_type', '').replace('_', ' ').title()}" 
-                           for item in items})
+        st.markdown("#### 🔍 Quick Filters")
         
         # Create filter controls in horizontal layout
         filter_col1, filter_col2, filter_col3 = st.columns(3)
         
         with filter_col1:
+            # Time period filter (most common use case)
+            time_filters = {
+                "today": "Today",
+                "week": "This Week", 
+                "month": "This Month",
+                "all": "All Time"
+            }
+            
+            selected_time = st.selectbox(
+                "📅 Time Period:", 
+                list(time_filters.keys()), 
+                format_func=lambda x: time_filters[x], 
+                index=1
+            )
+        
+        with filter_col2:
+            # Movement type filter
+            movement_types = ["all", "move", "create", "adjust"]
+            selected_movement_type = st.selectbox(
+                "🔄 Movement Type:",
+                movement_types,
+                format_func=lambda x: x.title() if x != "all" else "All Types"
+            )
+        
+        with filter_col3:
+            # Quick refresh and summary toggle
+            col_a, col_b = st.columns(2)
+            with col_a:
+                if st.button("🔄 Refresh", help="Refresh movement history"):
+                    st.rerun()
+            with col_b:
+                show_summary = st.toggle("📊 Summary", value=True, help="Show summary statistics")
+    
+    # Advanced filters in expander
+    with st.expander("🔧 Advanced Filters", expanded=False):
+        adv_col1, adv_col2 = st.columns(2)
+        
+        with adv_col1:
+            # Item filter (load with inventory for better UX)
+            items = safe_api_call(
+                lambda: api_client.get_items_with_inventory(limit=1000),
+                "Failed to load items for filtering"
+            ) or []
+            
+            item_options = {"all": "All Items"}
+            for item in items:
+                inventory_count = len(item.get('inventory_entries', []))
+                inventory_text = f" ({inventory_count} locations)" if inventory_count > 1 else ""
+                item_options[item['id']] = f"{item['name']}{inventory_text}"
+            
             selected_item_filter = st.selectbox(
-                "Filter by Item:",
+                "🔍 Filter by Item:",
                 options=list(item_options.keys()),
                 format_func=lambda x: item_options[x]
             )
             
             item_id_filter = None if selected_item_filter == "all" else selected_item_filter
         
-        with filter_col2:
-            # Time period filter
-            time_filters = {
-                "today": "Today",
-                "week": "This Week", 
-                "month": "This Month",
-                "quarter": "This Quarter",
-                "all": "All Time"
-            }
-            
-            selected_time = st.selectbox(
-                "Time Period:", 
-                list(time_filters.keys()), 
-                format_func=lambda x: time_filters[x], 
-                index=1
-            )
-        
-        with filter_col3:
-            # Movement type filter
-            movement_types = ["all", "create", "move", "adjust"]
-            selected_movement_type = st.selectbox(
-                "Movement Type:",
-                movement_types,
-                format_func=lambda x: x.title() if x != "all" else "All Types"
-            )
-        
-        # Additional filters
-        additional_col1, additional_col2 = st.columns(2)
-        
-        with additional_col1:
-            user_filter = st.text_input("User Filter:", placeholder="Enter user ID")
-        
-        with additional_col2:
-            show_summary = st.checkbox("Show Summary Stats", value=True)
+        with adv_col2:
+            user_filter = st.text_input("👤 User Filter:", placeholder="Enter user ID (optional)")
     
     # Calculate history parameters
     history_params = {}
@@ -268,8 +267,6 @@ def show_movement_history_interface():
             start_date = now - timedelta(days=7)
         elif selected_time == "month":
             start_date = now - timedelta(days=30)
-        elif selected_time == "quarter":
-            start_date = now - timedelta(days=90)
         
         history_params['start_date'] = start_date.isoformat()
     
@@ -608,9 +605,42 @@ def show_validation_interface():
         show_validation_report_widget()
 
 
+def show_advanced_features_interface():
+    """Display consolidated advanced features interface."""
+    st.markdown("### ⚙️ Advanced Movement Features")
+    st.markdown("_Advanced operations, analytics, validation, and administrative tools_")
+    
+    # Create sub-tabs for advanced features
+    advanced_tabs = st.tabs([
+        "🔧 Advanced Operations", 
+        "📈 Analytics", 
+        "🔍 Validation", 
+        "⚙️ Administration",
+        "🗂️ Classic Interface"
+    ])
+    
+    with advanced_tabs[0]:
+        show_advanced_operations_interface()
+    
+    with advanced_tabs[1]:
+        show_movement_analytics_interface()
+    
+    with advanced_tabs[2]:
+        show_validation_interface()
+    
+    with advanced_tabs[3]:
+        show_admin_interface()
+    
+    with advanced_tabs[4]:
+        # Show the original drag-and-drop interface for users who prefer it
+        st.markdown("#### 🎯 Classic Drag & Drop Interface")
+        st.info("This is the original movement interface. The new Quick Movement tab is recommended for most users.")
+        show_drag_drop_interface()
+
+
 def show_admin_interface():
     """Display the admin interface for movement system management."""
-    st.markdown("### ⚙️ Movement System Administration")
+    st.markdown("#### ⚙️ Movement System Administration")
     st.markdown("_Administrative tools for movement system configuration and monitoring_")
     
     admin_tabs = st.tabs(["🔧 Business Rules", "📊 System Health", "🔄 Maintenance"])
