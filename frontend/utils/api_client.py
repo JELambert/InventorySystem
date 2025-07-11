@@ -618,13 +618,92 @@ class APIClient:
             return False
     
     def move_item(self, item_id: int, from_location_id: int, to_location_id: int, quantity: int) -> dict:
-        """Move items between locations."""
+        """
+        Move items between locations with enhanced error handling.
+        
+        Args:
+            item_id: ID of the item to move
+            from_location_id: Source location ID
+            to_location_id: Destination location ID
+            quantity: Quantity to move
+            
+        Returns:
+            dict: Movement result
+            
+        Raises:
+            APIError: If movement fails with detailed error information
+        """
+        # Validate input parameters
+        if not all(isinstance(x, int) and x > 0 for x in [item_id, from_location_id, to_location_id, quantity]):
+            raise APIError("Invalid parameters: all IDs and quantity must be positive integers")
+        
+        if from_location_id == to_location_id:
+            raise APIError("Invalid movement: source and destination locations cannot be the same")
+        
         data = {
             "from_location_id": from_location_id,
             "to_location_id": to_location_id,
             "quantity": quantity
         }
-        return self._make_request("POST", f"inventory/move/{item_id}", data=data)
+        
+        # Log the movement request for debugging
+        correlation_id = self._generate_correlation_id()
+        logger.info(f"Move Item Request [ID: {correlation_id}]: Item {item_id} - {quantity} units from location {from_location_id} to {to_location_id}")
+        logger.debug(f"Move request payload: {data}")
+        
+        try:
+            result = self._make_request("POST", f"inventory/move/{item_id}", data=data)
+            logger.info(f"Move Item Success [ID: {correlation_id}]: {result}")
+            return result
+        except APIError as e:
+            # Enhanced error handling for movement-specific errors
+            error_details = {
+                "item_id": item_id,
+                "from_location_id": from_location_id,
+                "to_location_id": to_location_id,
+                "quantity": quantity,
+                "correlation_id": correlation_id,
+                "request_data": data
+            }
+            
+            # Try to extract more specific error information
+            response_data = getattr(e, 'response_data', {})
+            if response_data:
+                error_details["backend_error"] = response_data
+                
+                # Check for common validation errors
+                detail = response_data.get('detail', str(e))
+                if isinstance(detail, dict):
+                    validation_errors = detail.get('validation_errors', [])
+                    if validation_errors:
+                        error_details["validation_errors"] = validation_errors
+                elif isinstance(detail, list):
+                    error_details["validation_errors"] = detail
+            
+            logger.error(f"Move Item Failed [ID: {correlation_id}]: {error_details}")
+            
+            # Create enhanced error message
+            enhanced_message = f"Movement failed: {e.message}"
+            if "validation_errors" in error_details:
+                validation_messages = []
+                for error in error_details["validation_errors"]:
+                    if isinstance(error, dict):
+                        field = error.get('field', 'unknown')
+                        message = error.get('message', 'validation failed')
+                        validation_messages.append(f"{field}: {message}")
+                    else:
+                        validation_messages.append(str(error))
+                
+                if validation_messages:
+                    enhanced_message += f" - Validation errors: {'; '.join(validation_messages)}"
+            
+            # Create new APIError with enhanced details
+            enhanced_error = APIError(
+                enhanced_message,
+                status_code=e.status_code,
+                response_data=error_details
+            )
+            raise enhanced_error
     
     def get_item_locations(self, item_id: int) -> List[dict]:
         """Get all locations where an item is stored."""

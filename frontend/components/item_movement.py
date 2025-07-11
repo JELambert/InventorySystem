@@ -18,6 +18,83 @@ from utils.helpers import (
 )
 
 
+def handle_movement_error(error: Exception, operation: str = "move item") -> None:
+    """
+    Handle movement-specific errors with detailed user feedback.
+    
+    Args:
+        error: The exception that occurred
+        operation: Description of the operation that failed
+    """
+    if isinstance(error, APIError):
+        error_data = getattr(error, 'response_data', {})
+        
+        # Check for validation errors
+        validation_errors = error_data.get('validation_errors', [])
+        if validation_errors:
+            st.error(f"❌ Failed to {operation}:")
+            for validation_error in validation_errors:
+                if isinstance(validation_error, dict):
+                    field = validation_error.get('field', 'Unknown field')
+                    message = validation_error.get('message', 'Validation failed')
+                    st.error(f"• **{field}**: {message}")
+                else:
+                    st.error(f"• {validation_error}")
+        else:
+            # Show the enhanced error message
+            st.error(f"❌ {error.message}")
+        
+        # Show debug information in expander
+        if error_data and st.session_state.get('movement_debug_mode', False):
+            with st.expander("🔍 Debug Information", expanded=False):
+                st.json(error_data)
+    else:
+        # Generic error handling
+        show_error(f"Failed to {operation}: {str(error)}")
+
+
+def validate_movement_request(item: dict, from_location_id: int, to_location_id: int, quantity: int) -> tuple[bool, list]:
+    """
+    Validate a movement request before sending to API.
+    
+    Args:
+        item: Item data
+        from_location_id: Source location ID
+        to_location_id: Destination location ID  
+        quantity: Quantity to move
+        
+    Returns:
+        tuple: (is_valid, list_of_errors)
+    """
+    errors = []
+    
+    # Basic parameter validation
+    if not item or not item.get('id'):
+        errors.append("Invalid item selected")
+    
+    if from_location_id == to_location_id:
+        errors.append("Source and destination locations cannot be the same")
+    
+    if quantity <= 0:
+        errors.append("Quantity must be greater than 0")
+    
+    # Check if item has inventory at source location
+    inventory_entries = item.get('inventory_entries', [])
+    source_entry = None
+    for entry in inventory_entries:
+        if entry.get('location_id') == from_location_id:
+            source_entry = entry
+            break
+    
+    if not source_entry:
+        errors.append(f"Item is not available at the selected source location")
+    elif source_entry.get('quantity', 0) < quantity:
+        available = source_entry.get('quantity', 0)
+        errors.append(f"Insufficient quantity at source location. Available: {available}, Requested: {quantity}")
+    
+    return len(errors) == 0, errors
+
+
 def create_drag_drop_movement_interface(items: List[Dict], locations: List[Dict]) -> None:
     """
     Create an interactive drag-and-drop interface for moving items between locations.
@@ -1020,21 +1097,31 @@ def create_simplified_movement_interface() -> None:
             
             # Movement button
             if st.button("🔄 Move Item", type="primary", key="move_item"):
-                with st.spinner("Moving item..."):
-                    result = safe_api_call(
-                        lambda: api_client.move_item(
-                            item_id=selected_item_id,
-                            from_location_id=current_location_id,
-                            to_location_id=destination_location_id,
-                            quantity=move_quantity
-                        ),
-                        "Failed to move item"
-                    )
-                    
-                    if result:
-                        show_success(f"Successfully moved {move_quantity} units of {selected_item['name']} from {current_location_name} to {destination_name}!")
-                        st.cache_data.clear()  # Clear cache to refresh data
-                        st.rerun()
+                # Validate movement request
+                is_valid, validation_errors = validate_movement_request(
+                    selected_item, current_location_id, destination_location_id, move_quantity
+                )
+                
+                if not is_valid:
+                    st.error("❌ Movement validation failed:")
+                    for error in validation_errors:
+                        st.error(f"• {error}")
+                else:
+                    with st.spinner("Moving item..."):
+                        try:
+                            result = api_client.move_item(
+                                item_id=selected_item_id,
+                                from_location_id=current_location_id,
+                                to_location_id=destination_location_id,
+                                quantity=move_quantity
+                            )
+                            
+                            show_success(f"Successfully moved {move_quantity} units of {selected_item['name']} from {current_location_name} to {destination_name}!")
+                            st.cache_data.clear()  # Clear cache to refresh data
+                            st.rerun()
+                            
+                        except Exception as e:
+                            handle_movement_error(e, "move item")
         
         else:
             # Item in multiple locations - show selection interface
@@ -1099,21 +1186,31 @@ def create_simplified_movement_interface() -> None:
             
             # Movement button
             if st.button("🔄 Move Item", type="primary", key="move_item_multi"):
-                with st.spinner("Moving item..."):
-                    result = safe_api_call(
-                        lambda: api_client.move_item(
-                            item_id=selected_item_id,
-                            from_location_id=source_location_id,
-                            to_location_id=destination_location_id,
-                            quantity=move_quantity
-                        ),
-                        "Failed to move item"
-                    )
-                    
-                    if result:
-                        show_success(f"Successfully moved {move_quantity} units of {selected_item['name']} from {source_name.split(' (')[0]} to {destination_name.split(' (')[0]}!")
-                        st.cache_data.clear()  # Clear cache to refresh data
-                        st.rerun()
+                # Validate movement request
+                is_valid, validation_errors = validate_movement_request(
+                    selected_item, source_location_id, destination_location_id, move_quantity
+                )
+                
+                if not is_valid:
+                    st.error("❌ Movement validation failed:")
+                    for error in validation_errors:
+                        st.error(f"• {error}")
+                else:
+                    with st.spinner("Moving item..."):
+                        try:
+                            result = api_client.move_item(
+                                item_id=selected_item_id,
+                                from_location_id=source_location_id,
+                                to_location_id=destination_location_id,
+                                quantity=move_quantity
+                            )
+                            
+                            show_success(f"Successfully moved {move_quantity} units of {selected_item['name']} from {source_name.split(' (')[0]} to {destination_name.split(' (')[0]}!")
+                            st.cache_data.clear()  # Clear cache to refresh data
+                            st.rerun()
+                            
+                        except Exception as e:
+                            handle_movement_error(e, "move item")
         
         # Quick actions section
         st.markdown("---")
@@ -1143,7 +1240,17 @@ def create_simplified_movement_interface() -> None:
                         st.write(f"**Description:** {selected_item['description']}")
         
         with col2:
-            if st.button("🔄 Refresh Data", key="refresh_data"):
-                st.cache_data.clear()
-                show_success("Data refreshed!")
-                st.rerun()
+            col_a, col_b = st.columns(2)
+            with col_a:
+                if st.button("🔄 Refresh Data", key="refresh_data"):
+                    st.cache_data.clear()
+                    show_success("Data refreshed!")
+                    st.rerun()
+            with col_b:
+                debug_mode = st.toggle(
+                    "🔍 Debug",
+                    value=st.session_state.get('movement_debug_mode', False),
+                    key="movement_debug_toggle",
+                    help="Show detailed error information for troubleshooting"
+                )
+                st.session_state.movement_debug_mode = debug_mode
